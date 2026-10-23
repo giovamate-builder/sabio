@@ -14,6 +14,23 @@ Variables opcionales (en Render: el servicio › Environment):
 |---|---|
 | `ANTHROPIC_API_KEY` | Activa las respuestas redactadas por Claude. Sin esto funciona igual, en modo extractivo. |
 | `SABIO_ADMIN_TOKEN` | Clave para que nadie más pueda cargar sitios desde el panel. Recomendado si compartís el link. |
+| `SABIO_RENDER_JS` | `off` en el plan gratuito; `auto` con 2 GB o más (ver abajo). |
+
+### Sitios hechos con JavaScript y memoria
+
+La imagen de Docker trae Chromium (Playwright) para leer tiendas armadas con JavaScript, como
+Compra Gamer. Pero leer con navegador usa cerca de **1 GB de memoria** (medido con 2 páginas en paralelo),
+y el plan gratuito de Render tiene **512 MB**. Por eso `render.yaml` deja `SABIO_RENDER_JS=off`: SABIO
+funciona igual con los sitios que publican su contenido en el HTML, y en el panel avisa cuando un sitio
+se leyó con poco contenido.
+
+Para activarlo hace falta un plan con más memoria. **Starter (7 USD/mes) no alcanza**, porque también
+tiene 512 MB. El más barato que alcanza es **Standard: 2 GB de RAM y 1 CPU, 25 USD/mes**. Además no se
+duerme. Para pasarse:
+1. En Render: servicio **sabio** › **Settings** › **Instance Type** › **Standard**.
+2. En `render.yaml`, cambiá `plan: free` por `plan: standard` y `SABIO_RENDER_JS` de `"off"` a `"auto"`,
+   y hacé push. Render vuelve a publicar solo.
+3. En el panel, **Volver a rastrear** los sitios hechos con JavaScript.
 
 **Ojo con el plan gratuito:** el servicio se duerme a los 15 minutos sin uso y tarda cerca de un minuto en
 despertar. Abrí el link un par de minutos antes de mostrarlo. Además, los sitios que cargues desde el panel

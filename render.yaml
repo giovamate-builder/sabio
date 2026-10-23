@@ -10,6 +10,10 @@ services:
         value: "1"
       - key: SABIO_DB
         value: /tmp/sabio.db
+      # Chromium necesita cerca de 1 GB y el plan gratuito tiene 512 MB: el navegador queda apagado.
+      # Con un plan de 2 GB (Standard) se puede poner "auto". Ver DEPLOY.md.
+      - key: SABIO_RENDER_JS
+        value: "off"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: SABIO_ADMIN_TOKEN

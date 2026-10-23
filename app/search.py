@@ -71,6 +71,8 @@ class Index:
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE = re.compile(r"(?:\+?54\s?9?\s?)?(?:\(?\d{2,4}\)?[\s-]?)\d{3,4}[\s-]?\d{4}")
 WA = re.compile(r"(?:wa\.me/|whatsapp\.com/send\?phone=)(\d+)")
+# Palabras (ya normalizadas por tokens()) que delatan que el sitio vende algo
+STORE_WORDS = ("carrito", "comprar", "compra", "precio", "cuota", "checkout", "envio", "stock", "oferta")
 
 
 def build_profile(pages, products, name_hint: str = "") -> dict:
@@ -96,8 +98,10 @@ def build_profile(pages, products, name_hint: str = "") -> dict:
     contact["telefonos"] = sorted(set(m.strip() for m in PHONE.findall(all_text)
                                       if len(re.sub(r"\D", "", m)) >= 8 and re.sub(r"\D", "", m) not in wa
                                       and not any(re.sub(r"\D", "", m) in w or w.endswith(re.sub(r"\D", "", m)[-8:]) for w in wa)))[:3]
+    store_words = sum(1 for w in STORE_WORDS if term_counts.get(w))
     return {
         "nombre": name,
+        "tienda": bool(products) or store_words >= 2,
         "descripcion": home.meta_description if home else "",
         "categorias": [c for c, _ in cats.most_common(15)],
         "terminos": [t for t, _ in term_counts.most_common(60)],
@@ -115,6 +119,10 @@ def chunk_pages(pages, products) -> list[dict]:
                     "product": pr.__dict__})
     for p in pages:
         lines = p.text.split("\n")
+        # La meta descripción suele resumir lo importante ("Envíos a todo el país") y en los sitios
+        # hechos con JavaScript a veces es lo único legible
+        if p.meta_description and p.meta_description not in p.text:
+            lines.insert(0, p.meta_description)
         buf, size = [], 0
         for ln in lines:
             if size + len(ln) > 900 and buf:

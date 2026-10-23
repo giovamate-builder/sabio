@@ -35,6 +35,7 @@
   .tag{font-size:11px;color:var(--mu);display:block;margin-top:4px}
   ul{margin:0;padding-left:18px;font-size:14px}
   .mu{color:var(--mu);font-size:13px}
+  .warn{background:#fff7e6;border:1px solid #f5d38a;color:#7a5200;border-radius:8px;padding:9px 12px;font-size:13px;margin:8px 0}
 </style>
 </head>
 <body>
@@ -57,6 +58,8 @@
     <section class="card">
       <h2 id="dname">Sitio</h2>
       <p class="mu" id="ddesc"></p>
+      <div class="warn" id="aviso" hidden></div>
+      <p class="mu" id="dinfo"></p>
       <p class="mu">Pegá esta línea antes de &lt;/body&gt; en tu sitio:</p>
       <code id="snippet"></code>
       <p></p>
@@ -65,6 +68,10 @@
       <h2>Preguntas sin respuesta</h2>
       <p class="mu">Son las consultas que tu sitio no contesta. Publicá esa información y SABIO la aprende en el próximo rastreo.</p>
       <ul id="unans"></ul>
+      <p></p>
+      <h2>Preguntas fuera de tema</h2>
+      <p class="mu">Consultas que no tienen que ver con el rubro del sitio. El asistente las rechaza.</p>
+      <ul id="offtopic"></ul>
       <p></p><button class="sec" id="recrawl">Volver a rastrear</button>
     </section>
     <section class="card">
@@ -77,6 +84,8 @@
 <script>
 const $ = s => document.querySelector(s);
 let current = null, history = [];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const qlist = l => l.length ? l.map(u => `<li>${esc(u.question)} <span class="mu">(${u.n})</span></li>`).join('') : '<li class="mu">Todavía no hay.</li>';
 function tok() { try { return localStorage.getItem('sabio_admin') || ''; } catch (e) { return ''; } }
 async function api(p, o) {
   o = o || {}; o.headers = Object.assign({}, o.headers || {}, {'X-Admin-Token': tok()});
@@ -89,8 +98,9 @@ async function api(p, o) {
 }
 async function refresh() {
   const sites = await api('/api/sites');
-  $('#list').innerHTML = sites.map(s => `<tr data-id="${s.id}" class="${s.id===current?'sel':''}"><td>${s.name||s.url}<div class="mu">${s.url}</div></td>
-    <td><span class="pill ${s.status}">${s.status}</span></td><td>${s.pages||0}</td><td>${s.products||0}</td><td>${s.platform||'-'}</td></tr>`).join('');
+  $('#list').innerHTML = sites.map(s => { const ci = s.crawl_info || {};
+    return `<tr data-id="${esc(s.id)}" class="${s.id===current?'sel':''}"><td>${esc(s.name||s.url)}${ci.aviso ? ' <span title="Se leyó poco contenido">⚠️</span>' : ''}<div class="mu">${esc(s.url)}</div></td>
+    <td><span class="pill ${esc(s.status)}">${esc(s.status)}</span></td><td>${s.pages||0}${ci.renderizadas ? ` <span class="mu">(${ci.renderizadas} con navegador)</span>` : ''}</td><td>${s.products||0}</td><td>${esc(s.platform||'-')}</td></tr>`; }).join('');
   document.querySelectorAll('#list tr').forEach(tr => tr.onclick = () => select(tr.dataset.id));
   if (current) loadDetail();
 }
@@ -100,11 +110,16 @@ async function loadDetail() {
   $('#detail').hidden = false;
   $('#dname').textContent = s.name || s.url;
   $('#ddesc').textContent = (s.profile && s.profile.descripcion) || '';
+  const ci = s.crawl_info || {};
+  const aviso = s.status === 'error' ? (s.error || 'No se pudo leer el sitio.') : ci.aviso;
+  $('#aviso').hidden = !aviso; $('#aviso').textContent = aviso ? '⚠️ ' + aviso : '';
+  $('#dinfo').textContent = s.status === 'listo' ? `${s.pages||0} páginas leídas (${ci.renderizadas||0} renderizadas con navegador) · ${s.products||0} productos` : '';
   $('#snippet').textContent = `<script src="${location.origin}/widget.js" data-site="${s.id}" defer><\/script>`;
   const rate = st.tasa_resolucion == null ? '-' : Math.round(st.tasa_resolucion * 100) + '%';
   $('#kpi').innerHTML = `<div><b>${st.total}</b><span>consultas</span></div><div><b>${rate}</b><span>resueltas</span></div>
     <div><b>${(st.por_estado.fuera_de_alcance||0)}</b><span>fuera de tema</span></div>`;
-  $('#unans').innerHTML = st.sin_respuesta.length ? st.sin_respuesta.map(u => `<li>${u.question} <span class="mu">(${u.n})</span></li>`).join('') : '<li class="mu">Todavía no hay.</li>';
+  $('#unans').innerHTML = qlist(st.sin_respuesta);
+  $('#offtopic').innerHTML = qlist(st.fuera_de_tema || []);
 }
 $('#f').onsubmit = async e => {
   e.preventDefault();

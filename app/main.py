@@ -138,7 +138,9 @@ async def chat(body: ChatIn):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "modo": "llm" if engine.use_llm() else "extractivo", "modelo": engine.MODEL}
+    from .crawler import render_mode
+    return {"ok": True, "modo": "llm" if engine.use_llm() else "extractivo", "modelo": engine.MODEL,
+            "navegador": render_mode()}
 
 
 @app.get("/widget.js")

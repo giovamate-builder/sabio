@@ -5,9 +5,25 @@ import time
 
 from . import store
 from .connectors import detect_platform, fetch_catalog
-from .crawler import crawl
+from .crawler import crawl, render_mode
 from .search import build_profile, chunk_pages
 from .textutil import strip_accents
+
+
+def crawl_info(pages, products, blocked: int | None = None) -> dict:
+    """Resumen del rastreo para el panel, con un aviso si se leyó poco contenido."""
+    chars = sum(len(p.text) for p in pages)
+    rendered = sum(1 for p in pages if p.rendered)
+    avisos = []
+    if chars < 3000 and not products:
+        avisos.append(f"Se leyó poco contenido ({len(pages)} páginas, {chars} caracteres). Puede ser un sitio hecho "
+                      "con JavaScript o que bloquea rastreadores: el asistente va a responder poco.")
+        if render_mode() == "off":
+            avisos.append("El navegador está desactivado (SABIO_RENDER_JS=off).")
+    if blocked:
+        avisos.append(f"El sitio empezó a rechazar al rastreador (HTTP {blocked}) y se dejó de leer para no "
+                      "sobrecargarlo. Volvé a rastrear más tarde.")
+    return {"caracteres": chars, "renderizadas": rendered, "bloqueado": blocked, "aviso": " ".join(avisos) or None}
 
 
 async def ingest_site(site_id: str, max_pages: int = 300) -> dict:
@@ -15,7 +31,8 @@ async def ingest_site(site_id: str, max_pages: int = 300) -> dict:
     store.update_site(site_id, status="rastreando", progress=0, error=None)
     t0 = time.time()
     try:
-        pages = await crawl(site["url"], max_pages=max_pages,
+        run_info: dict = {}
+        pages = await crawl(site["url"], max_pages=max_pages, info=run_info,
                             on_progress=lambda n: store.update_site(site_id, progress=n))
         products = [p for pg in pages for p in pg.products]
         platform = site.get("platform") or await detect_platform(site["url"])
@@ -33,15 +50,19 @@ async def ingest_site(site_id: str, max_pages: int = 300) -> dict:
             uniq.setdefault(strip_accents(p.name.lower()), p)
         products = list(uniq.values())
         if not pages and not products:
+            if run_info.get("bloqueado"):
+                raise RuntimeError(f"El sitio rechazó al rastreador (HTTP {run_info['bloqueado']}). "
+                                   "Probá más tarde o pedile al dueño que habilite a SabioBot.")
             raise RuntimeError("No se pudo leer ninguna página del sitio")
         chunks = chunk_pages(pages, products)
         profile = build_profile(pages, products)
+        info = crawl_info(pages, products, run_info.get("bloqueado"))
         store.replace_chunks(site_id, chunks)
         store.update_site(site_id, status="listo", pages=len(pages), products=len(products),
                           profile=profile, name=profile["nombre"], platform=platform,
-                          crawled_at=time.time())
+                          crawled_at=time.time(), crawl_info=info)
         return {"paginas": len(pages), "productos": len(products), "fragmentos": len(chunks),
-                "segundos": round(time.time() - t0, 1), "plataforma": platform}
+                "segundos": round(time.time() - t0, 1), "plataforma": platform, **info}
     except Exception as e:  # noqa: BLE001
         store.update_site(site_id, status="error", error=str(e))
         raise
@@ -68,6 +89,7 @@ def ingest_local(site_id: str, folder, public_base: str, name: str | None = None
     chunks = chunk_pages(pages, products)
     profile = build_profile(pages, products)
     store.update_site(site_id, status="listo", pages=len(pages), products=len(products), profile=profile,
-                      name=name or profile["nombre"], crawled_at=time.time())
+                      name=name or profile["nombre"], crawled_at=time.time(),
+                      crawl_info=crawl_info(pages, products))
     store.replace_chunks(site_id, chunks)
     return {"paginas": len(pages), "productos": len(products)}

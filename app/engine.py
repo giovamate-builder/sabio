@@ -28,6 +28,11 @@ HUMAN = re.compile(r"(hablar con (alguien|una persona|un humano|un asesor)|conta
 STOCK = re.compile(r"(stock|hay|ten[eé]s|tienen|disponib|queda|quedan|agotad)", re.I)
 PRICE = re.compile(r"(precio|cu[aá]nto (sale|cuesta|vale)|valor|cuesta|sale)", re.I)
 DESC = re.compile(r"(descrip|caracter[ií]stic|detalle|especificac|medida|material|tama[nñ]o)", re.I)
+# Preguntas de compra: en una tienda nunca son "fuera de alcance" (se aplica sobre texto sin tildes)
+COMMERCE = re.compile(r"\b(stock|disponib\w*|precio\w*|cuesta\w*|cuanto (sale|vale)\w*|envio\w*|envia\w*|"
+                      r"enviar|mandan|mandas|despach\w*|entrega\w*|cuota\w*|pago\w*|pagar|pagan|tarjeta\w*|"
+                      r"transferencia\w*|efectivo|garantia\w*|cambio\w*|cambiar|devolu\w*|devolver|retir\w+|"
+                      r"horario\w*|abren|atienden)\b")
 
 _index_cache: dict[str, tuple[float, Index]] = {}
 _catalog_cache: dict[str, tuple[float, dict]] = {}
@@ -221,6 +226,11 @@ async def answer(site_id: str, question: str, history: list[dict] | None = None)
     if contact_intent:
         return Answer(_contact_line(site), "respondida")
 
+    prof = site.get("profile") or {}
+    shop_question = bool(prof.get("tienda") or prof.get("productos")) and bool(COMMERCE.search(strip_accents(q.lower())))
+    if not known and shop_question:
+        # Es una consulta de compra en una tienda: el dato falta en el sitio, pero el tema es del rubro
+        return Answer(f"No tengo esa información en {name}. " + _contact_line(site), "sin_info")
     if not known:
         missing = _surface(q, unknown)
         about = f" sobre «{missing}»" if missing else ""

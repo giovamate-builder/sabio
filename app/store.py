@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY, url TEXT NOT NULL, name TEXT, platform TEXT, creds TEXT,
   status TEXT DEFAULT 'nuevo', progress INTEGER DEFAULT 0, pages INTEGER DEFAULT 0,
   products INTEGER DEFAULT 0, profile TEXT, created REAL, crawled_at REAL, error TEXT,
-  allow_general INTEGER DEFAULT 0, contact TEXT
+  allow_general INTEGER DEFAULT 0, contact TEXT, crawl_info TEXT
 );
 CREATE TABLE IF NOT EXISTS chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT, site_id TEXT, url TEXT, title TEXT, kind TEXT,
@@ -43,6 +43,10 @@ def conn():
 def init():
     with conn() as c:
         c.executescript(SCHEMA)
+        # Bases creadas con versiones anteriores
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(sites)")}
+        if "crawl_info" not in cols:
+            c.execute("ALTER TABLE sites ADD COLUMN crawl_info TEXT")
 
 
 def create_site(site_id: str, url: str, platform: str | None = None, creds: dict | None = None,
@@ -68,16 +72,21 @@ def get_site(site_id: str) -> dict | None:
     if not r:
         return None
     d = dict(r)
-    for k in ("profile", "creds", "contact"):
+    for k in ("profile", "creds", "contact", "crawl_info"):
         d[k] = json.loads(d[k]) if d.get(k) else {}
     return d
 
 
 def list_sites() -> list[dict]:
     with conn() as c:
-        rows = c.execute("SELECT id,url,name,platform,status,pages,products,crawled_at FROM sites "
+        rows = c.execute("SELECT id,url,name,platform,status,pages,products,crawled_at,crawl_info FROM sites "
                          "ORDER BY created DESC").fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["crawl_info"] = json.loads(d["crawl_info"]) if d["crawl_info"] else {}
+        out.append(d)
+    return out
 
 
 def replace_chunks(site_id: str, chunks: list[dict]):
@@ -112,10 +121,13 @@ def stats(site_id: str) -> dict:
                          (site_id,)).fetchall()
         unanswered = c.execute("SELECT question, COUNT(*) n FROM messages WHERE site_id=? AND status='sin_info' GROUP BY question ORDER BY n DESC LIMIT 20",
                                (site_id,)).fetchall()
-        recent = c.execute("SELECT question, answer, status, ts FROM messages WHERE site_id=? "
+        off_topic = c.execute("SELECT question, COUNT(*) n FROM messages WHERE site_id=? AND status='fuera_de_alcance' "
+                              "GROUP BY question ORDER BY n DESC LIMIT 20", (site_id,)).fetchall()
+        recent =c.execute("SELECT question, answer, status, ts FROM messages WHERE site_id=? "
                            "ORDER BY ts DESC LIMIT 30", (site_id,)).fetchall()
     by = {r["status"]: r["n"] for r in rows}
     total = sum(by.values())
     return {"total": total, "por_estado": by,
             "tasa_resolucion": round(by.get("respondida", 0) / total, 3) if total else None,
-            "sin_respuesta": [dict(r) for r in unanswered], "recientes": [dict(r) for r in recent]}
+            "sin_respuesta": [dict(r) for r in unanswered], "fuera_de_tema": [dict(r) for r in off_topic],
+            "recientes": [dict(r) for r in recent]}
