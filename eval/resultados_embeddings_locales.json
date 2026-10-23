@@ -1,0 +1,62 @@
+{
+  "resumen": {
+    "modo": "extractivo",
+    "preguntas_dentro_de_tema": 37,
+    "precision": 0.919,
+    "preguntas_coloquiales": 32,
+    "precision_coloquial": 0.906,
+    "preguntas_fuera_de_tema": 31,
+    "rechazo_correcto": 1.0,
+    "rechazo_correcto_parecidas": 1.0,
+    "respuestas_inventadas": 0,
+    "vagas_atendidas": 1.0,
+    "latencia_p50_ms": 34,
+    "latencia_p95_ms": 60,
+    "latencia_max_ms": 366,
+    "memoria_servidor_mb": 566
+  },
+  "fallas": [
+    [
+      "dentro",
+      "tecnosur",
+      "me lo mandan a Mendoza?",
+      "sin_info",
+      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
+    ],
+    [
+      "dentro",
+      "tecnosur",
+      "tienen algo para escuchar música sin cables",
+      "respondida",
+      "Encontré esto en la tienda:\n• Auriculares inalámbricos Sonix B200: en stock, precio $38.999."
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "tienen camara web para zoom?",
+      "sin_info",
+      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "tienen garantia?",
+      "respondida",
+      "TecnoSur es una tienda de tecnología fundada en 2019 en Pilar.\nVendemos computación, audio, redes y accesorios con garan"
+    ],
+    [
+      "dentro",
+      "dulcepilar",
+      "abren los lunes?",
+      "sin_info",
+      "No tengo esa información en Dulce Pilar. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304559876, corr"
+    ],
+    [
+      "dentro_coloquial",
+      "dulcepilar",
+      "atienden los domingos?",
+      "sin_info",
+      "No tengo esa información en Dulce Pilar. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304559876, corr"
+    ]
+  ]
+}

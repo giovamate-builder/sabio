@@ -140,6 +140,117 @@
    "escribime un poema de amor",
    "los auriculares tienen garantía de por vida?",
    "hacen service de lavarropas?"
+  ],
+  "dentro_coloquial": [
+   [
+    "tenés auris bluetooth???",
+    "auriculares-inalambricos-sonix-b200",
+    "en stock"
+   ],
+   [
+    "cuanto sale la compu?",
+    "notebook-lumen-14",
+    "899.999"
+   ],
+   [
+    "precio de la notbook",
+    "notebook-lumen-14",
+    "899.999"
+   ],
+   [
+    "tienen auriculares inalambricos",
+    "auriculares-inalambricos-sonix-b200",
+    "en stock"
+   ],
+   [
+    "hay parlantes??",
+    "parlante-portatil-sonix-go-mini",
+    "sin stock"
+   ],
+   [
+    "el mause inalambrico cuanto sale",
+    "mouse-inalambrico-orbit-m3",
+    "12.900"
+   ],
+   [
+    "TIENEN TECLADO MECANICO!!!",
+    "teclado-mecanico-orbit-k87",
+    "pocas unidades"
+   ],
+   [
+    "busco un monitor de 24 pulgadas",
+    "monitor-vista-24",
+    "219.000"
+   ],
+   [
+    "tenés reloj inteligente?",
+    "smartwatch-pulso-s5",
+    "en stock"
+   ],
+   [
+    "cargador para el celu",
+    "cargador-rapido-65w",
+    "18.900"
+   ],
+   [
+    "necesito un cable usb c",
+    "cable-usb-c",
+    "6.500"
+   ],
+   [
+    "tienen camara web para zoom?",
+    "webcam-clara-hd-1080p",
+    "sin stock"
+   ],
+   [
+    "tienen un modem wifi?",
+    "router-wifi-6-nexo",
+    "en stock"
+   ],
+   [
+    "disco externo de 1 tera",
+    "disco-ssd-externo-1-tb",
+    "preventa"
+   ],
+   [
+    "envian al interior?",
+    "envios",
+    "todo el país"
+   ],
+   [
+    "se puede pagar en cuotas?",
+    "medios-de-pago",
+    "6 cuotas"
+   ],
+   [
+    "aceptan tarjeta de credito?",
+    "medios-de-pago",
+    "Visa"
+   ],
+   [
+    "tienen garantia?",
+    "cambios-y-devoluciones",
+    "12 meses"
+   ],
+   [
+    "a que hora abren?",
+    "contacto",
+    "10 a 18"
+   ]
+  ],
+  "fuera_parecidas": [
+   "¿venden lavarropas?",
+   "tienen celulares samsung?",
+   "tienen impresoras?",
+   "venden televisores?",
+   "tienen PlayStation 5?",
+   "tienen auriculares Sony?",
+   "arreglan notebooks?"
+  ],
+  "vagas": [
+   "tenés algo para regalar?",
+   "qué me recomendás para la oficina?",
+   "tienen ofertas?"
   ]
  },
  "dulcepilar": {
@@ -212,6 +323,85 @@
    "cómo arreglo mi computadora",
    "recomendame un celular",
    "hacen tortas sin TACC?"
+  ],
+  "dentro_coloquial": [
+   [
+    "tenés tortas???",
+    "productos/",
+    "torta"
+   ],
+   [
+    "tienen sanguches de miga?",
+    "sandwiches-de-miga",
+    "15.600"
+   ],
+   [
+    "precio de la choco torta",
+    "chocotorta-entera",
+    "18.500"
+   ],
+   [
+    "tienen lemon pay?",
+    "lemon-pie",
+    "en stock"
+   ],
+   [
+    "la rogel hay?",
+    "torta-rogel",
+    "sin stock"
+   ],
+   [
+    "alfajores de maizena",
+    "alfajores",
+    "9.800"
+   ],
+   [
+    "medialunas de manteca hay?",
+    "medialunas",
+    "en stock"
+   ],
+   [
+    "como se hace la chocotorta??",
+    "recetas/chocotorta",
+    "dulce de leche"
+   ],
+   [
+    "receta budin de limon",
+    "recetas/budin-de-limon",
+    "harina"
+   ],
+   [
+    "llevan a domicilio?",
+    "pedidos",
+    "3.500"
+   ],
+   [
+    "cuanto antes tengo que encargar la torta",
+    "pedidos",
+    "48 horas"
+   ],
+   [
+    "donde estan ubicados",
+    "pedidos",
+    "Camelias"
+   ],
+   [
+    "atienden los domingos?",
+    "pedidos",
+    "martes a domingo"
+   ]
+  ],
+  "fuera_parecidas": [
+   "tienen pizza?",
+   "venden empanadas?",
+   "hacen tortas veganas?",
+   "tienen helado de dulce de leche?",
+   "receta de tiramisú",
+   "hacen catering para casamientos?"
+  ],
+  "vagas": [
+   "tenés algo dulce para el cumple?",
+   "qué me recomendás para la merienda?"
   ]
  }
 }

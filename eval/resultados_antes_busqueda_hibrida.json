@@ -1,0 +1,160 @@
+{
+  "resumen": {
+    "modo": "extractivo",
+    "preguntas_dentro_de_tema": 37,
+    "precision": 0.892,
+    "preguntas_coloquiales": 32,
+    "precision_coloquial": 0.719,
+    "preguntas_fuera_de_tema": 31,
+    "rechazo_correcto": 0.871,
+    "rechazo_correcto_parecidas": 0.692,
+    "respuestas_inventadas": 4,
+    "vagas_atendidas": 0.4,
+    "latencia_p50_ms": 29,
+    "latencia_p95_ms": 40,
+    "latencia_max_ms": 45,
+    "memoria_servidor_mb": 62
+  },
+  "fallas": [
+    [
+      "dentro",
+      "tecnosur",
+      "me lo mandan a Mendoza?",
+      "sin_info",
+      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
+    ],
+    [
+      "dentro",
+      "tecnosur",
+      "tienen algo para escuchar música sin cables",
+      "sin_info",
+      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "tenés auris bluetooth???",
+      "respondida",
+      "No encontré nada específico sobre «auris», pero esto es lo que dice el sitio:\nAuriculares Bluetooth 5.3 con cancelación "
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "precio de la notbook",
+      "sin_info",
+      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "el mause inalambrico cuanto sale",
+      "respondida",
+      "No encontré nada específico sobre «mause», pero esto es lo que dice el sitio:\nTienda online de tecnología en Pilar, Buen"
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "cargador para el celu",
+      "respondida",
+      "No encontré nada específico sobre «celu», pero esto es lo que dice el sitio:\nProducto: Cargador rápido 65W USB-C. Marca:"
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "envian al interior?",
+      "respondida",
+      "No encontré nada específico sobre «envian», pero esto es lo que dice el sitio:\nTienda online de tecnología en Pilar, Bue"
+    ],
+    [
+      "dentro_coloquial",
+      "tecnosur",
+      "tienen garantia?",
+      "respondida",
+      "TecnoSur es una tienda de tecnología fundada en 2019 en Pilar.\nVendemos computación, audio, redes y accesorios con garan"
+    ],
+    [
+      "fuera_parecidas",
+      "tecnosur",
+      "tienen celulares samsung?",
+      "respondida",
+      "No encontré nada específico sobre «samsung», pero esto es lo que dice el sitio:\nCargador GaN de 65 W con dos puertos USB"
+    ],
+    [
+      "fuera_parecidas",
+      "tecnosur",
+      "tienen auriculares Sony?",
+      "respondida",
+      "No encontré nada específico sobre «Sony», pero esto es lo que dice el sitio:\nTienda online de tecnología en Pilar, Bueno"
+    ],
+    [
+      "fuera_parecidas",
+      "tecnosur",
+      "arreglan notebooks?",
+      "respondida",
+      "No encontré nada específico sobre «arreglan», pero esto es lo que dice el sitio:\nProducto: Notebook Lumen 14 Ryzen 5. Ma"
+    ],
+    [
+      "vagas",
+      "tecnosur",
+      "tenés algo para regalar?",
+      "fuera_de_alcance",
+      "No encontré información sobre «regalar» en TecnoSur. Solo puedo responder sobre lo que ofrece este sitio. Podés comunica"
+    ],
+    [
+      "vagas",
+      "tecnosur",
+      "tienen ofertas?",
+      "fuera_de_alcance",
+      "No encontré información sobre «ofertas» en TecnoSur. Solo puedo responder sobre lo que ofrece este sitio. Podés comunica"
+    ],
+    [
+      "dentro",
+      "dulcepilar",
+      "me das la receta de la chocotorta",
+      "respondida",
+      "Pastelería artesanal y recetas caseras\nChocotorta entera (8 porciones)\n$18.500\nEn stock\nChocotorta clásica con galletita"
+    ],
+    [
+      "dentro",
+      "dulcepilar",
+      "abren los lunes?",
+      "sin_info",
+      "No tengo esa información en Dulce Pilar. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304559876, corr"
+    ],
+    [
+      "dentro_coloquial",
+      "dulcepilar",
+      "como se hace la chocotorta??",
+      "respondida",
+      "Encontré esto en la tienda:\n• Chocotorta entera (8 porciones): en stock, precio $18.500. Chocotorta clásica con galletit"
+    ],
+    [
+      "dentro_coloquial",
+      "dulcepilar",
+      "llevan a domicilio?",
+      "respondida",
+      "No encontré nada específico sobre «domicilio», pero esto es lo que dice el sitio:\nPastelería artesanal y recetas caseras"
+    ],
+    [
+      "dentro_coloquial",
+      "dulcepilar",
+      "donde estan ubicados",
+      "fuera_de_alcance",
+      "No encontré información sobre «ubicados» en Dulce Pilar. Solo puedo responder sobre lo que ofrece este sitio. Podés comu"
+    ],
+    [
+      "fuera_parecidas",
+      "dulcepilar",
+      "tienen helado de dulce de leche?",
+      "respondida",
+      "Pastelería artesanal y recetas caseras\nReceta de chocotorta casera\nIngredientes de la chocotorta: 2 paquetes de galletit"
+    ],
+    [
+      "vagas",
+      "dulcepilar",
+      "qué me recomendás para la merienda?",
+      "fuera_de_alcance",
+      "No encontré información sobre «recomendás» en Dulce Pilar. Solo puedo responder sobre lo que ofrece este sitio. Podés co"
+    ]
+  ]
+}

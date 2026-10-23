@@ -14,11 +14,11 @@ CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY, url TEXT NOT NULL, name TEXT, platform TEXT, creds TEXT,
   status TEXT DEFAULT 'nuevo', progress INTEGER DEFAULT 0, pages INTEGER DEFAULT 0,
   products INTEGER DEFAULT 0, profile TEXT, created REAL, crawled_at REAL, error TEXT,
-  allow_general INTEGER DEFAULT 0, contact TEXT, crawl_info TEXT
+  allow_general INTEGER DEFAULT 0, contact TEXT, crawl_info TEXT, emb_model TEXT
 );
 CREATE TABLE IF NOT EXISTS chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT, site_id TEXT, url TEXT, title TEXT, kind TEXT,
-  text TEXT, product TEXT
+  text TEXT, product TEXT, vec BLOB
 );
 CREATE INDEX IF NOT EXISTS ix_chunks_site ON chunks(site_id);
 CREATE TABLE IF NOT EXISTS messages (
@@ -44,9 +44,10 @@ def init():
     with conn() as c:
         c.executescript(SCHEMA)
         # Bases creadas con versiones anteriores
-        cols = {r["name"] for r in c.execute("PRAGMA table_info(sites)")}
-        if "crawl_info" not in cols:
-            c.execute("ALTER TABLE sites ADD COLUMN crawl_info TEXT")
+        for table, col, typ in (("sites", "crawl_info", "TEXT"), ("sites", "emb_model", "TEXT"),
+                                ("chunks", "vec", "BLOB")):
+            if col not in {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
 
 
 def create_site(site_id: str, url: str, platform: str | None = None, creds: dict | None = None,
@@ -92,15 +93,16 @@ def list_sites() -> list[dict]:
 def replace_chunks(site_id: str, chunks: list[dict]):
     with conn() as c:
         c.execute("DELETE FROM chunks WHERE site_id=?", (site_id,))
-        c.executemany("INSERT INTO chunks (site_id,url,title,kind,text,product) VALUES (?,?,?,?,?,?)",
+        c.executemany("INSERT INTO chunks (site_id,url,title,kind,text,product,vec) VALUES (?,?,?,?,?,?,?)",
                       [(site_id, ch["url"], ch["title"], ch["kind"], ch["text"],
-                        json.dumps(ch.get("product"), ensure_ascii=False) if ch.get("product") else None)
-                       for ch in chunks])
+                        json.dumps(ch.get("product"), ensure_ascii=False) if ch.get("product") else None,
+                        ch.get("vec")) for ch in chunks])
 
 
 def get_chunks(site_id: str) -> list[dict]:
     with conn() as c:
-        rows = c.execute("SELECT id,url,title,kind,text,product FROM chunks WHERE site_id=?", (site_id,)).fetchall()
+        rows = c.execute("SELECT id,url,title,kind,text,product,vec FROM chunks WHERE site_id=?",
+                         (site_id,)).fetchall()
     out = []
     for r in rows:
         d = dict(r)

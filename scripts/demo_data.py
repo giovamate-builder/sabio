@@ -52,6 +52,7 @@ DULCE = {
         ("Torta Rogel", "Tortas", 21000, "OutOfStock", "Capas finas de masa crocante con dulce de leche y merengue."),
         ("Docena de alfajores de maicena", "Masas", 9800, "InStock", "Alfajores de maicena rellenos de dulce de leche con coco rallado."),
         ("Box de medialunas x12", "Panadería", 7200, "InStock", "Medialunas de manteca recién horneadas, disponibles de martes a domingo."),
+        ("Sándwiches de miga x24", "Panadería", 15600, "InStock", "Sándwiches de miga de jamón y queso y de huevo y lechuga, en pan de miga fresco."),
     ],
     "pages": {
         "recetas/chocotorta": ("Receta de chocotorta casera", [

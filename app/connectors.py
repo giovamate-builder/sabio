@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import html
 import re
 from urllib.parse import urljoin
 
@@ -15,7 +16,8 @@ from .extract import Product
 
 
 def _strip_html(s: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s or "")).strip()
+    # html.unescape: WooCommerce manda los nombres con entidades ("DE MAYOR QUIERO SER&#8230;")
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", s or ""))).strip()
 
 
 async def detect_platform(base_url: str) -> str | None:

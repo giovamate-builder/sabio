@@ -3,11 +3,21 @@ from __future__ import annotations
 
 import time
 
-from . import store
+from . import semantic, store
 from .connectors import detect_platform, fetch_catalog
 from .crawler import crawl, render_mode
 from .search import build_profile, chunk_pages
 from .textutil import strip_accents
+
+
+def add_vectors(chunks: list[dict]) -> str | None:
+    """Calcula el embedding de cada fragmento si hay búsqueda semántica. Devuelve el modelo usado."""
+    vecs = semantic.embed_documents([f"{ch['title']}\n{ch['text']}" for ch in chunks])
+    if vecs is None:
+        return None
+    for ch, v in zip(chunks, vecs):
+        ch["vec"] = semantic.to_blob(v)
+    return semantic.model_name()
 
 
 def crawl_info(pages, products, blocked: int | None = None) -> dict:
@@ -57,10 +67,11 @@ async def ingest_site(site_id: str, max_pages: int = 300) -> dict:
         chunks = chunk_pages(pages, products)
         profile = build_profile(pages, products)
         info = crawl_info(pages, products, run_info.get("bloqueado"))
+        emb_model = add_vectors(chunks)
         store.replace_chunks(site_id, chunks)
         store.update_site(site_id, status="listo", pages=len(pages), products=len(products),
                           profile=profile, name=profile["nombre"], platform=platform,
-                          crawled_at=time.time(), crawl_info=info)
+                          crawled_at=time.time(), crawl_info=info, emb_model=emb_model)
         return {"paginas": len(pages), "productos": len(products), "fragmentos": len(chunks),
                 "segundos": round(time.time() - t0, 1), "plataforma": platform, **info}
     except Exception as e:  # noqa: BLE001
@@ -88,8 +99,9 @@ def ingest_local(site_id: str, folder, public_base: str, name: str | None = None
     products = list(uniq.values())
     chunks = chunk_pages(pages, products)
     profile = build_profile(pages, products)
+    emb_model = add_vectors(chunks)
+    store.replace_chunks(site_id, chunks)
     store.update_site(site_id, status="listo", pages=len(pages), products=len(products), profile=profile,
                       name=name or profile["nombre"], crawled_at=time.time(),
-                      crawl_info=crawl_info(pages, products))
-    store.replace_chunks(site_id, chunks)
+                      crawl_info=crawl_info(pages, products), emb_model=emb_model)
     return {"paginas": len(pages), "productos": len(products)}

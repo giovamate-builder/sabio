@@ -15,6 +15,7 @@ Variables opcionales (en Render: el servicio › Environment):
 | `ANTHROPIC_API_KEY` | Activa las respuestas redactadas por Claude. Sin esto funciona igual, en modo extractivo. |
 | `SABIO_ADMIN_TOKEN` | Clave para que nadie más pueda cargar sitios desde el panel. Recomendado si compartís el link. |
 | `SABIO_RENDER_JS` | `off` en el plan gratuito; `auto` con 2 GB o más (ver abajo). |
+| `VOYAGE_API_KEY` | Activa la búsqueda semántica con Voyage AI (ver abajo). Sin esto, SABIO busca por palabras, sinónimos y errores de tipeo. |
 
 ### Sitios hechos con JavaScript y memoria
 
@@ -31,6 +32,41 @@ duerme. Para pasarse:
 2. En `render.yaml`, cambiá `plan: free` por `plan: standard` y `SABIO_RENDER_JS` de `"off"` a `"auto"`,
    y hacé push. Render vuelve a publicar solo.
 3. En el panel, **Volver a rastrear** los sitios hechos con JavaScript.
+
+### Búsqueda semántica (embeddings) y memoria
+
+SABIO entiende sinónimos, lunfardo y errores de tipeo sin usar memoria extra. La búsqueda semántica con
+embeddings es opcional, y medimos dos formas de usarla:
+
+| Opción | Memoria del servidor | Costo | Entra en Render gratis |
+|---|---|---|---|
+| Sin embeddings (por defecto) | ~70 MB | gratis | Sí |
+| Modelo local multilingual-e5-small (ONNX, cuantizado) | **~566 MB** | gratis | **No** (512 MB) |
+| API de Voyage AI, modelo `voyage-4-lite` | ~70 MB | 0,02 USD por millón de tokens, con 200 millones gratis | Sí |
+
+El modelo local pesa 118 MB en disco, pero su tabla de vocabulario (250 mil palabras) se carga en float32 y
+ocupa 384 MB: ninguna opción de onnxruntime lo baja. Por eso en Render conviene Voyage. Indexar un sitio de
+50 páginas son unos 100 mil tokens: menos de un centavo de dólar, y en la práctica gratis con los 200
+millones de tokens incluidos. Para activarlo:
+1. Creá una cuenta en https://www.voyageai.com y generá una API key.
+2. En Render: servicio **sabio** › **Environment** › `VOYAGE_API_KEY` = la clave › **Save**.
+3. Volvé a rastrear los sitios desde el panel para que se calculen los vectores. `/api/health` muestra
+   `"embeddings": "voyage:voyage-4-lite"`.
+
+En la evaluación, los embeddings no cambiaron las métricas en los sitios de ejemplo: lo que más mejoró
+fue la parte por palabras. Ver la tabla "Antes y después" en el README.
+
+### Tiendas reales para la demo
+
+Verificamos que estas tiendas permiten rastrear (`robots.txt`), no bloquean y publican sus productos sin
+JavaScript. Las tres primeras son las que mejor funcionaron y las cargamos en Render:
+- **hardcorecomputacion.com.ar** (tecnología, WooCommerce): "¿tienen stock de placas de video?"
+- **felfort.com.ar** (golosinas, WooCommerce): "¿tienen bombones Marroc?", "¿hacen envíos?"
+- **bensimon.com.ar** (ropa, Tiendanube): "¿tenés buzos en stock?"
+- cuspide.com (librería) y cafemartinez.com (café) también funcionan.
+
+Ojo: en el plan gratuito, los sitios cargados desde el panel se borran cuando el servicio se reinicia o
+se vuelve a publicar. Hay que volver a cargarlos desde `/admin` antes de mostrarlos.
 
 **Ojo con el plan gratuito:** el servicio se duerme a los 15 minutos sin uso y tarda cerca de un minuto en
 despertar. Abrí el link un par de minutos antes de mostrarlo. Además, los sitios que cargues desde el panel

@@ -306,6 +306,138 @@ def test_rastreador_se_detiene_si_el_sitio_lo_rechaza(monkeypatch):
     assert len(pedidos) < 12  # no siguió golpeando las 40 páginas
 
 
+TIENDA_HTML = {
+    "sandwiches": ("Sándwiches de miga x24", "Sándwiches de miga de jamón y queso.", 15600),
+    "zapatillas": ("Zapatillas urbanas Runner", "Zapatillas de lona con suela de goma.", 45000),
+    "notebook": ("Notebook Lumen 14", "Computadora portátil de 14 pulgadas con 16 GB de RAM.", 899999),
+    "auriculares": ("Auriculares Sonix B200", "Auriculares inalámbricos Bluetooth con 30 horas de batería.", 38999),
+    "cargador": ("Cargador 65W USB-C", "Cargador compatible con notebooks y celulares.", 18900),
+    "mouse": ("Mouse inalámbrico Orbit", "Mouse ergonómico inalámbrico.", 12900),
+    "torta": ("Torta Rogel", "Torta de dulce de leche y merengue.", 21000),
+}
+
+
+def _tienda_variada():
+    store.init()
+    pages = []
+    for slug, (name, desc, price) in TIENDA_HTML.items():
+        ld = json.dumps({"@type": "Product", "name": name, "description": desc,
+                         "offers": {"price": str(price), "priceCurrency": "ARS", "availability": "InStock"}})
+        pages.append(parse_page(f"https://variada.com/p/{slug}", f"""<html><head><title>{name} | Variada</title>
+        <script type="application/ld+json">{ld}</script></head><body><main><h1>{name}</h1><p>{desc}</p>
+        <p>Agregalo al carrito.</p></main></body></html>"""))
+    prods = [p for pg in pages for p in pg.products]
+    store.create_site("t5", "https://variada.com")
+    store.replace_chunks("t5", chunk_pages(pages, prods))
+    store.update_site("t5", status="listo", profile=build_profile(pages, prods), crawled_at=5.0)
+
+
+@pytest.mark.parametrize("q,esperado", [
+    ("tienen sanguches de miga?", "Sándwiches de miga"),
+    ("tenés zapas?", "Zapatillas"),
+    ("cuanto sale la compu?", "Notebook"),
+    ("cargador para el celu", "Cargador"),
+    ("tenés auris???", "Auriculares"),
+    ("algo para escuchar música sin cables", "Auriculares"),
+    ("tenés tortas???", "Torta Rogel"),
+    ("precio de la notbook", "Notebook"),      # error de tipeo
+    ("el mause inalambrico cuanto sale", "Mouse"),
+    ("TIENEN AURICULARES INALAMBRICOS!!!", "Auriculares"),
+])
+def test_entiende_sinonimos_lunfardo_y_errores_de_tipeo(q, esperado):
+    _tienda_variada()
+    a = run(engine.answer("t5", q))
+    assert a.status == "respondida" and esperado in a.text, a.text
+
+
+@pytest.mark.parametrize("q", ["tienen auriculares Sony?", "tienen celulares samsung?", "venden libros?",
+                               "tienen helado de dulce de leche?", "arreglan notebooks?"])
+def test_no_inventa_con_un_termino_que_el_sitio_no_tiene(q):
+    """Con "Sony" o "helado" ausentes, contestar con lo demás ("auriculares", "dulce de leche") sería inventar."""
+    _tienda_variada()
+    assert run(engine.answer("t5", q)).status in ("sin_info", "fuera_de_alcance")
+
+
+def test_correccion_de_tipeo_no_confunde_terminaciones():
+    idx = Index([{"title": "Libre de gluten", "text": "Galletitas libres de gluten.", "kind": "page", "url": "u"},
+                 {"title": "Mouse", "text": "Mouse inalámbrico", "kind": "page", "url": "v"}])
+    from app.textutil import tokens
+    t = lambda w: tokens(w)[0]  # noqa: E731 - el índice guarda las palabras ya procesadas
+    assert idx.fuzzy(t("libro")) == set()          # "libro" no es "libre"
+    assert idx.fuzzy(t("mause")) == {t("mouse")}
+
+
+def test_busqueda_hibrida_combina_rankings_sin_cambiar_la_evidencia():
+    import numpy as np
+    chunks = [{"title": "Envíos", "text": "Envíos a todo el país.", "kind": "page", "url": "/envios"},
+              {"title": "Garantía", "text": "Garantía oficial de 12 meses en todos los productos.", "kind": "page",
+               "url": "/garantia"},
+              {"title": "Nosotros", "text": "Somos una tienda con garantía.", "kind": "page", "url": "/nosotros"}]
+    vecs = np.eye(3, dtype=np.float32)
+    idx = Index(chunks, vecs)
+    solo_palabras, _ = Index(chunks).search("tienen garantia?")
+    hibrida, _ = idx.search("tienen garantia?", qvec=np.array([0, 1, 0], dtype=np.float32))
+    assert hibrida[0][1]["url"] == "/garantia" and "sem" in hibrida[0][1]
+    # la cobertura (evidencia escrita) es la misma con y sin embeddings
+    assert {h[1]["url"]: h[2] for h in hibrida if h[2]} == {h[1]["url"]: h[2] for h in solo_palabras}
+    # un fragmento que solo trae la búsqueda semántica no tiene evidencia escrita
+    otra, _ = idx.search("tienen garantia?", qvec=np.array([1, 0, 0], dtype=np.float32))
+    assert [h[2] for h in otra if h[1]["url"] == "/envios"] == [0.0]
+
+
+def test_modo_llm_reescribe_la_pregunta_y_no_manda_temperature(monkeypatch):
+    _tienda_variada()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    llamadas = []
+
+    class FakeMsgs:
+        async def create(self, **kw):
+            llamadas.append(kw)
+            texto = ("auriculares bluetooth\nauriculares inalámbricos" if "Reescribí" in kw["system"]
+                     else "Sí, tenemos los Auriculares Sonix B200 [1].")
+            return type("R", (), {"stop_reason": "end_turn",
+                                  "content": [type("B", (), {"type": "text", "text": texto})()]})()
+
+    import anthropic
+    monkeypatch.setattr(anthropic, "AsyncAnthropic", lambda: type("C", (), {"messages": FakeMsgs()})())
+    a = run(engine.answer("t5", "tenés auris?"))
+    assert a.status == "respondida" and a.mode == "llm"
+    assert len(llamadas) == 2 and "Reescribí" in llamadas[0]["system"]
+    assert llamadas[0]["output_config"] == {"effort": "low"}
+    assert all("temperature" not in kw for kw in llamadas)  # la API la rechaza desde el 21/10/2026
+
+
+def test_embeddings_con_voyage(monkeypatch):
+    from app import semantic
+    monkeypatch.setenv("SABIO_EMBEDDINGS", "auto")
+    monkeypatch.setenv("VOYAGE_API_KEY", "test")
+    pedidos = []
+
+    def handler(req):
+        body = json.loads(req.content)
+        pedidos.append(body)
+        assert req.headers["authorization"] == "Bearer test"
+        return httpx.Response(200, json={"data": [{"index": i, "embedding": [3.0, 4.0]}
+                                                  for i in range(len(body["input"]))]})
+
+    real = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    v = semantic.embed_documents(["a", "b"])
+    assert semantic.backend() == "voyage" and v.shape == (2, 2) and abs(v[0][0] - 0.6) < 1e-6  # normalizado
+    assert pedidos[0]["input_type"] == "document" and pedidos[0]["model"] == semantic.VOYAGE_MODEL
+    monkeypatch.setenv("SABIO_EMBEDDINGS", "off")
+    assert semantic.embed_query("x") is None
+
+
+def test_perfil_usa_og_site_name_y_descarta_telefonos_falsos():
+    html = """<html><head><title>Descubrí la nueva colección</title><meta property="og:site_name" content="Bensimon">
+    </head><body><main><p>Imagen 00-1024-1024. Código 013734256107.</p><p>Teléfono: 011 4555-1234</p>
+    </main></body></html>"""
+    prof = build_profile([parse_page("https://b.com/", html)], [])
+    assert prof["nombre"] == "Bensimon"
+    assert prof["contacto"]["telefonos"] == ["011 4555-1234"]
+
+
 def test_estadisticas_separan_fuera_de_tema():
     store.init()
     store.create_site("t3", "https://x.com")

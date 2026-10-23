@@ -18,3 +18,7 @@ services:
         sync: false
       - key: SABIO_ADMIN_TOKEN
         sync: false
+      # Búsqueda semántica: con una clave de Voyage AI se activa sola (SABIO_EMBEDDINGS=auto).
+      # El modelo local no entra en 512 MB. Ver DEPLOY.md.
+      - key: VOYAGE_API_KEY
+        sync: false

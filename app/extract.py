@@ -7,6 +7,7 @@ del sitio que se capturan al renderizar con navegador (ver crawler.py).
 """
 from __future__ import annotations
 
+import html as html_lib
 import json
 import re
 from dataclasses import dataclass, field
@@ -66,6 +67,7 @@ class Page:
     meta_description: str = ""
     scripts: int = 0          # cantidad de <script> con código: indica un sitio hecho con JavaScript
     rendered: bool = False    # True si se leyó con navegador (Playwright)
+    site_name: str = ""       # og:site_name, el nombre que el sitio declara
 
 
 def _norm_avail(v) -> str | None:
@@ -260,6 +262,7 @@ def parse_page(url: str, html: str, rendered: bool = False) -> Page:
     scripts = sum(1 for s in soup.find_all("script")
                   if s.get("src") or (s.get("type") or "text/javascript").endswith("javascript"))
     title = (soup.title.get_text(strip=True) if soup.title else "") or url
+    site_name = _meta(soup, "og:site_name", "application-name") or ""
     md = soup.find("meta", attrs={"name": "description"})
     meta_description = md.get("content", "").strip() if md else ""
     for t in soup(["script", "style", "noscript", "svg", "iframe", "form"]):
@@ -279,4 +282,5 @@ def parse_page(url: str, html: str, rendered: bool = False) -> Page:
             seen.add(b)
             uniq.append(b)
     return Page(url=url, title=title, text="\n".join(uniq), products=products, links=links,
-                meta_description=meta_description, scripts=scripts, rendered=rendered)
+                meta_description=meta_description, scripts=scripts, rendered=rendered,
+                site_name=html_lib.unescape(site_name).strip())
