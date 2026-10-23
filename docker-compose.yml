@@ -1,0 +1,10 @@
+services:
+  sabio:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SABIO_DEMO=1
+    volumes: ["sabio-data:/data"]
+volumes:
+  sabio-data:

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SABIO · Demo</title>
+<style>
+  :root{--c:#2f5bea;--tx:#1d2433;--mu:#5d6577;--bd:#e1e5ee;--bg:#f4f6fb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--tx);background:var(--bg)}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 16px}
+  h1{font-size:34px;margin:0 0 8px}
+  .lead{font-size:18px;color:var(--mu);margin:0 0 28px;max-width:680px;line-height:1.5}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:28px}
+  .card{background:#fff;border:1px solid var(--bd);border-radius:14px;padding:20px}
+  .card h2{font-size:18px;margin:0 0 6px}
+  .card p{color:var(--mu);margin:0 0 14px;font-size:14px;line-height:1.5}
+  .card ul{margin:0 0 16px;padding-left:18px;font-size:14px;line-height:1.7}
+  a.btn{display:inline-block;background:var(--c);color:#fff;text-decoration:none;padding:10px 16px;border-radius:9px;font-size:14px}
+  a.btn.alt{background:#c2410c}
+  a.btn.ghost{background:#fff;color:var(--c);border:1px solid var(--c)}
+  code{display:block;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:9px;font-size:13px;overflow-x:auto}
+  .steps{counter-reset:s;list-style:none;padding:0;margin:0}
+  .steps li{counter-increment:s;padding:8px 0 8px 36px;position:relative;font-size:15px;line-height:1.5}
+  .steps li:before{content:counter(s);position:absolute;left:0;top:7px;width:24px;height:24px;border-radius:50%;background:var(--c);color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center}
+  footer{color:var(--mu);font-size:13px;margin-top:28px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SABIO</h1>
+  <p class="lead">Un asistente que se instala en cualquier sitio web, lee solo todo su contenido y responde a los visitantes únicamente con lo que está publicado en ese sitio.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>TecnoSur · tienda de tecnología</h2>
+      <p>12 productos con precio y stock. Abrí la burbuja de chat abajo a la derecha y probá:</p>
+      <ul><li>¿Tenés stock de los auriculares Sonix?</li><li>¿Cuántas cuotas sin interés tienen?</li><li>Me das la receta de la chocotorta</li></ul>
+      <a class="btn" href="/demo/tecnosur/">Abrir la tienda</a>
+    </div>
+    <div class="card">
+      <h2>Dulce Pilar · pastelería</h2>
+      <p>Publica sus tortas y algunas recetas. La misma pregunta da otra respuesta:</p>
+      <ul><li>Me das la receta de la chocotorta</li><li>¿Cuánto sale la torta Rogel?</li><li>Receta de pizza napolitana</li></ul>
+      <a class="btn alt" href="/demo/dulcepilar/">Abrir la pastelería</a>
+    </div>
+    <div class="card">
+      <h2>Panel del cliente</h2>
+      <p>Lo que ve el dueño del negocio: sitios conectados, la línea de instalación, métricas y las preguntas que su sitio no responde.</p>
+      <a class="btn ghost" href="/admin">Abrir el panel</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Instalarlo en un sitio</h2>
+    <ol class="steps">
+      <li>En el panel, cargá la dirección del sitio y tocá <b>Absorber sitio</b>. SABIO lo recorre solo.</li>
+      <li>Copiá la línea que aparece y pegala antes de <b>&lt;/body&gt;</b> en el sitio (en Tiendanube va en Configuración › Códigos externos; en WordPress, con un plugin de código en el pie).</li>
+      <li>Listo: aparece la burbuja de chat y ya conoce los productos, precios y políticas del sitio.</li>
+    </ol>
+    <p></p>
+    <code id="snip">&lt;script src="https://ESTE-SERVIDOR/widget.js" data-site="ID_DEL_SITIO" defer&gt;&lt;/script&gt;</code>
+    <script>document.getElementById("snip").textContent = '<script src="' + location.origin + '/widget.js" data-site="ID_DEL_SITIO" defer><\/script>';</script>
+  </div>
+
+  <footer>Proyecto de Dirección de Proyectos Informáticos · Ingeniería en Informática · USAL 2026 · Matellini Delannoy, Policaro, Irrazábal, Di Martino</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,217 @@
+{
+ "tecnosur": {
+  "dentro": [
+   [
+    "¿tienen stock de los auriculares Sonix?",
+    "auriculares-inalambricos-sonix-b200",
+    "en stock"
+   ],
+   [
+    "cuánto sale la notebook",
+    "notebook-lumen-14",
+    "899.999"
+   ],
+   [
+    "¿hay parlante portátil?",
+    "parlante-portatil-sonix-go-mini",
+    "sin stock"
+   ],
+   [
+    "precio del mouse inalámbrico",
+    "mouse-inalambrico-orbit-m3",
+    "12.900"
+   ],
+   [
+    "el teclado mecánico tiene RGB?",
+    "teclado-mecanico-orbit-k87",
+    "RGB"
+   ],
+   [
+    "qué resolución tiene el monitor",
+    "monitor-vista-24",
+    "1920x1080"
+   ],
+   [
+    "pasame la descripción del smartwatch",
+    "smartwatch-pulso-s5",
+    "AMOLED"
+   ],
+   [
+    "cuántos watts tiene el cargador",
+    "cargador-rapido-65w",
+    "65"
+   ],
+   [
+    "la webcam está disponible?",
+    "webcam-clara-hd-1080p",
+    "sin stock"
+   ],
+   [
+    "tienen router wifi 6?",
+    "router-wifi-6-nexo",
+    "en stock"
+   ],
+   [
+    "el disco ssd de 1 tb hay?",
+    "disco-ssd-externo-1-tb",
+    "preventa"
+   ],
+   [
+    "hacen envíos a todo el país?",
+    "envios",
+    "todo el país"
+   ],
+   [
+    "el envío es gratis?",
+    "envios",
+    "150.000"
+   ],
+   [
+    "puedo retirar por el local?",
+    "envios",
+    "retirar"
+   ],
+   [
+    "cuántas cuotas sin interés tienen",
+    "medios-de-pago",
+    "6 cuotas"
+   ],
+   [
+    "aceptan mercado pago?",
+    "medios-de-pago",
+    "Mercado Pago"
+   ],
+   [
+    "hay descuento por transferencia?",
+    "medios-de-pago",
+    "10%"
+   ],
+   [
+    "puedo devolver un producto?",
+    "cambios-y-devoluciones",
+    "30 días"
+   ],
+   [
+    "qué garantía tienen los productos",
+    "cambios-y-devoluciones",
+    "12 meses"
+   ],
+   [
+    "horario del local",
+    "contacto",
+    "10 a 18"
+   ],
+   [
+    "me lo mandan a Mendoza?",
+    "envios",
+    "resto del país"
+   ],
+   [
+    "qué tan rápido lee el disco externo",
+    "disco-ssd-externo",
+    "1050"
+   ],
+   [
+    "tienen algo para escuchar música sin cables",
+    "auriculares-inalambricos-sonix-b200",
+    "Bluetooth"
+   ],
+   [
+    "cuánto tarda en llegar un pedido",
+    "envios",
+    "3 a 7"
+   ],
+   [
+    "el reloj mide el sueño?",
+    "smartwatch-pulso-s5",
+    "sueño"
+   ]
+  ],
+  "fuera": [
+   "me das la receta de la chocotorta",
+   "quién ganó el mundial 2022",
+   "¿venden heladeras?",
+   "cómo se hace un asado",
+   "qué opinás de la política argentina",
+   "recomendame una película",
+   "cuál es la capital de Francia",
+   "tienen zapatillas Nike?",
+   "cuánto está el dólar hoy",
+   "escribime un poema de amor",
+   "los auriculares tienen garantía de por vida?",
+   "hacen service de lavarropas?"
+  ]
+ },
+ "dulcepilar": {
+  "dentro": [
+   [
+    "me das la receta de la chocotorta",
+    "recetas/chocotorta",
+    "dulce de leche"
+   ],
+   [
+    "receta del budín de limón",
+    "recetas/budin-de-limon",
+    "harina"
+   ],
+   [
+    "tienen lemon pie?",
+    "lemon-pie",
+    "en stock"
+   ],
+   [
+    "cuanto sale la torta rogel",
+    "torta-rogel",
+    "21.000"
+   ],
+   [
+    "venden alfajores de maicena?",
+    "alfajores",
+    "9.800"
+   ],
+   [
+    "hay medialunas?",
+    "medialunas",
+    "en stock"
+   ],
+   [
+    "con cuánta anticipación encargo una torta",
+    "pedidos",
+    "48 horas"
+   ],
+   [
+    "hacen envios?",
+    "pedidos",
+    "3.500"
+   ],
+   [
+    "cuánto sale la chocotorta entera",
+    "chocotorta-entera",
+    "18.500"
+   ],
+   [
+    "dónde queda el local",
+    "pedidos",
+    "Camelias"
+   ],
+   [
+    "tienen algo con limón?",
+    "lemon-pie",
+    "Lemon pie"
+   ],
+   [
+    "abren los lunes?",
+    "pedidos",
+    "martes a domingo"
+   ]
+  ],
+  "fuera": [
+   "receta de pizza napolitana",
+   "venden notebooks?",
+   "quién ganó el mundial 2022",
+   "cómo arreglo mi computadora",
+   "recomendame un celular",
+   "hacen tortas sin TACC?"
+  ]
+ }
+}

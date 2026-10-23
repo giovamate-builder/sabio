@@ -1,0 +1,50 @@
+{
+  "resumen": {
+    "modo": "extractivo",
+    "preguntas_dentro_de_tema": 37,
+    "precision": 0.973,
+    "preguntas_fuera_de_tema": 18,
+    "rechazo_correcto": 0.722,
+    "respuestas_inventadas": 5,
+    "latencia_p50_ms": 52,
+    "latencia_max_ms": 95
+  },
+  "fallas": [
+    [
+      "tecnosur",
+      "qué opinás de la política argentina",
+      "respondida",
+      "No encontré nada específico sobre «política», pero esto es lo que dice el sitio:\nEnvíos\nHacemos envíos a todo el país co"
+    ],
+    [
+      "tecnosur",
+      "escribime un poema de amor",
+      "respondida",
+      "No encontré nada específico sobre «poema», pero esto es lo que dice el sitio:\nCambios y devoluciones\nTenés 30 días desde"
+    ],
+    [
+      "tecnosur",
+      "los auriculares tienen garantía de por vida?",
+      "respondida",
+      "No encontré nada específico sobre «vida», pero esto es lo que dice el sitio:\nAuriculares inalámbricos Sonix B200\n$38.999"
+    ],
+    [
+      "dulcepilar",
+      "abren los lunes?",
+      "fuera_de_alcance",
+      "No encontré información sobre «abren» en Dulce Pilar. Solo puedo responder sobre lo que ofrece este sitio. Podés comunic"
+    ],
+    [
+      "dulcepilar",
+      "receta de pizza napolitana",
+      "respondida",
+      "No encontré nada específico sobre «napolitana», pero esto es lo que dice el sitio:\nReceta de budín de limón\nIngredientes"
+    ],
+    [
+      "dulcepilar",
+      "hacen tortas sin TACC?",
+      "respondida",
+      "No encontré nada específico sobre «TACC», pero esto es lo que dice el sitio:\nProducto: Torta Rogel. Marca: Dulce Pilar. "
+    ]
+  ]
+}

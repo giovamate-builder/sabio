@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SABIO · Panel</title>
+<style>
+  :root{--c:#2f5bea;--bg:#f4f6fb;--tx:#1d2433;--mu:#6b7385;--bd:#e1e5ee}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--tx)}
+  header{background:#fff;border-bottom:1px solid var(--bd);padding:14px 24px;display:flex;align-items:center;gap:10px}
+  header b{font-size:18px} header span{color:var(--mu);font-size:13px}
+  main{max-width:1050px;margin:0 auto;padding:24px 16px;display:grid;gap:18px}
+  .card{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:18px}
+  h2{font-size:15px;margin:0 0 12px}
+  form{display:flex;gap:8px;flex-wrap:wrap}
+  input,select{border:1px solid var(--bd);border-radius:8px;padding:9px 12px;font-size:14px}
+  input[type=url]{flex:1;min-width:240px}
+  button{background:var(--c);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer}
+  button.sec{background:#fff;color:var(--c);border:1px solid var(--c)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd)}
+  th{color:var(--mu);font-weight:500;font-size:12px;text-transform:uppercase}
+  tr.sel{background:#eef2ff} tr{cursor:pointer}
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;background:#eef1f7}
+  .pill.listo{background:#e3f6ea;color:#1c7a3d}.pill.error{background:#fde8e8;color:#a32020}
+  code{display:block;background:#0f172a;color:#e2e8f0;padding:10px;border-radius:8px;font-size:12px;overflow-x:auto}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:800px){.grid{grid-template-columns:1fr}}
+  .kpi{display:flex;gap:14px;flex-wrap:wrap}.kpi div{background:var(--bg);border-radius:10px;padding:10px 14px;min-width:110px}
+  .kpi b{display:block;font-size:20px}.kpi span{font-size:12px;color:var(--mu)}
+  #chat{height:300px;overflow-y:auto;background:var(--bg);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+  .m{padding:8px 11px;border-radius:10px;font-size:14px;max-width:88%;white-space:pre-wrap}
+  .u{align-self:flex-end;background:var(--c);color:#fff}.b{background:#fff;border:1px solid var(--bd)}
+  .tag{font-size:11px;color:var(--mu);display:block;margin-top:4px}
+  ul{margin:0;padding-left:18px;font-size:14px}
+  .mu{color:var(--mu);font-size:13px}
+</style>
+</head>
+<body>
+<header><b>SABIO</b><span>Panel del cliente · asistentes que aprenden solos de tu sitio</span></header>
+<main>
+  <section class="card">
+    <h2>Conectar un sitio</h2>
+    <form id="f">
+      <input type="url" id="url" placeholder="https://mitienda.com.ar" required>
+      <select id="platform"><option value="">Plataforma: detectar</option><option>shopify</option><option>woocommerce</option><option>tiendanube</option></select>
+      <label class="mu"><input type="checkbox" id="general"> Permitir conocimiento general del rubro</label>
+      <button>Absorber sitio</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>Sitios</h2>
+    <table><thead><tr><th>Sitio</th><th>Estado</th><th>Páginas</th><th>Productos</th><th>Plataforma</th></tr></thead><tbody id="list"></tbody></table>
+  </section>
+  <div class="grid" id="detail" hidden>
+    <section class="card">
+      <h2 id="dname">Sitio</h2>
+      <p class="mu" id="ddesc"></p>
+      <p class="mu">Pegá esta línea antes de &lt;/body&gt; en tu sitio:</p>
+      <code id="snippet"></code>
+      <p></p>
+      <div class="kpi" id="kpi"></div>
+      <p></p>
+      <h2>Preguntas sin respuesta</h2>
+      <p class="mu">Son las consultas que tu sitio no contesta. Publicá esa información y SABIO la aprende en el próximo rastreo.</p>
+      <ul id="unans"></ul>
+      <p></p><button class="sec" id="recrawl">Volver a rastrear</button>
+    </section>
+    <section class="card">
+      <h2>Probar el asistente</h2>
+      <div id="chat"></div>
+      <form id="cf"><input id="q" style="flex:1" placeholder="Ej: ¿tienen stock de…?"><button>Enviar</button></form>
+    </section>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let current = null, history = [];
+function tok() { try { return localStorage.getItem('sabio_admin') || ''; } catch (e) { return ''; } }
+async function api(p, o) {
+  o = o || {}; o.headers = Object.assign({}, o.headers || {}, {'X-Admin-Token': tok()});
+  let r = await fetch(p, o);
+  if (r.status === 401) {
+    const t = prompt('Clave de administración'); try { localStorage.setItem('sabio_admin', t || ''); } catch (e) {}
+    o.headers['X-Admin-Token'] = t || ''; r = await fetch(p, o);
+  }
+  return r.json();
+}
+async function refresh() {
+  const sites = await api('/api/sites');
+  $('#list').innerHTML = sites.map(s => `<tr data-id="${s.id}" class="${s.id===current?'sel':''}"><td>${s.name||s.url}<div class="mu">${s.url}</div></td>
+    <td><span class="pill ${s.status}">${s.status}</span></td><td>${s.pages||0}</td><td>${s.products||0}</td><td>${s.platform||'-'}</td></tr>`).join('');
+  document.querySelectorAll('#list tr').forEach(tr => tr.onclick = () => select(tr.dataset.id));
+  if (current) loadDetail();
+}
+async function select(id) { current = id; history = []; $('#chat').innerHTML=''; refresh(); }
+async function loadDetail() {
+  const s = await api('/api/sites/' + current), st = await api(`/api/sites/${current}/stats`);
+  $('#detail').hidden = false;
+  $('#dname').textContent = s.name || s.url;
+  $('#ddesc').textContent = (s.profile && s.profile.descripcion) || '';
+  $('#snippet').textContent = `<script src="${location.origin}/widget.js" data-site="${s.id}" defer><\/script>`;
+  const rate = st.tasa_resolucion == null ? '-' : Math.round(st.tasa_resolucion * 100) + '%';
+  $('#kpi').innerHTML = `<div><b>${st.total}</b><span>consultas</span></div><div><b>${rate}</b><span>resueltas</span></div>
+    <div><b>${(st.por_estado.fuera_de_alcance||0)}</b><span>fuera de tema</span></div>`;
+  $('#unans').innerHTML = st.sin_respuesta.length ? st.sin_respuesta.map(u => `<li>${u.question} <span class="mu">(${u.n})</span></li>`).join('') : '<li class="mu">Todavía no hay.</li>';
+}
+$('#f').onsubmit = async e => {
+  e.preventDefault();
+  const r = await api('/api/sites', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url: $('#url').value, platform: $('#platform').value || null, allow_general: $('#general').checked})});
+  current = r.id; $('#url').value=''; refresh();
+};
+$('#recrawl').onclick = async () => { await api(`/api/sites/${current}/recrawl`, {method:'POST'}); refresh(); };
+$('#cf').onsubmit = async e => {
+  e.preventDefault(); const q = $('#q').value.trim(); if (!q) return; $('#q').value='';
+  add('u', q);
+  const r = await api('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({site_id: current, message: q, session: 'panel', history})});
+  history.push({role:'user', content:q}, {role:'assistant', content:r.respuesta});
+  add('b', r.respuesta, `${r.estado}${r.modo ? ' · ' + r.modo : ''}${(r.fuentes||[]).length ? ' · ' + r.fuentes.map(f=>f.url).join(', ') : ''}`);
+  loadDetail();
+};
+function add(c, t, tag) { const d = document.createElement('div'); d.className = 'm ' + c; d.textContent = t;
+  if (tag) { const s = document.createElement('span'); s.className='tag'; s.textContent = tag; d.appendChild(s); }
+  $('#chat').appendChild(d); $('#chat').scrollTop = 1e9; }
+refresh(); setInterval(refresh, 4000);
+</script>
+</body>
+</html>

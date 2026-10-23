@@ -1,0 +1,16 @@
+# Despliegue en Render (plan gratuito): New > Blueprint > elegir este repositorio.
+services:
+  - type: web
+    name: sabio
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: SABIO_DEMO
+        value: "1"
+      - key: SABIO_DB
+        value: /tmp/sabio.db
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SABIO_ADMIN_TOKEN
+        sync: false

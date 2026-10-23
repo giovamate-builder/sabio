@@ -1,0 +1,32 @@
+{
+  "resumen": {
+    "modo": "extractivo",
+    "preguntas_dentro_de_tema": 37,
+    "precision": 0.919,
+    "preguntas_fuera_de_tema": 18,
+    "rechazo_correcto": 1.0,
+    "respuestas_inventadas": 0,
+    "latencia_p50_ms": 60,
+    "latencia_max_ms": 130
+  },
+  "fallas": [
+    [
+      "tecnosur",
+      "me lo mandan a Mendoza?",
+      "sin_info",
+      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
+    ],
+    [
+      "tecnosur",
+      "tienen algo para escuchar música sin cables",
+      "sin_info",
+      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
+    ],
+    [
+      "dulcepilar",
+      "abren los lunes?",
+      "fuera_de_alcance",
+      "No encontré información sobre «abren» en Dulce Pilar. Solo puedo responder sobre lo que ofrece este sitio. Podés comunic"
+    ]
+  ]
+}
