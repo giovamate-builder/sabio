@@ -448,3 +448,8 @@ def forget(site_id: str):
     """Saca de la memoria el índice y el catálogo de un sitio borrado."""
     _index_cache.pop(site_id, None)
     _catalog_cache.pop(site_id, None)
+
+
+def contact_line(site) -> str:
+    """Contacto del negocio (lo usa la API cuando se alcanza el límite del plan)."""
+    return _contact_line(site)

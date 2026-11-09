@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY, url TEXT NOT NULL, name TEXT, platform TEXT, creds TEXT,
   status TEXT DEFAULT 'nuevo', progress INTEGER DEFAULT 0, pages INTEGER DEFAULT 0,
   products INTEGER DEFAULT 0, profile TEXT, created REAL, crawled_at REAL, error TEXT,
-  allow_general INTEGER DEFAULT 0, contact TEXT, crawl_info TEXT, emb_model TEXT
+  allow_general INTEGER DEFAULT 0, contact TEXT, crawl_info TEXT, emb_model TEXT,
+  plan TEXT DEFAULT 'emprendedor'
 );
 CREATE TABLE IF NOT EXISTS chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT, site_id TEXT, url TEXT, title TEXT, kind TEXT,
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT, site_id TEXT, session TEXT, question TEXT,
   answer TEXT, status TEXT, sources TEXT, ts REAL
 );
+CREATE INDEX IF NOT EXISTS ix_messages_site_ts ON messages(site_id, ts);
 """
 
 
@@ -45,17 +47,19 @@ def init():
         c.executescript(SCHEMA)
         # Bases creadas con versiones anteriores
         for table, col, typ in (("sites", "crawl_info", "TEXT"), ("sites", "emb_model", "TEXT"),
-                                ("chunks", "vec", "BLOB")):
+                                ("chunks", "vec", "BLOB"),
+                                # Bloque 5: los sitios que ya existían quedan en el plan por defecto
+                                ("sites", "plan", "TEXT DEFAULT 'emprendedor'")):
             if col not in {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
 
 
 def create_site(site_id: str, url: str, platform: str | None = None, creds: dict | None = None,
-                allow_general: bool = False):
+                allow_general: bool = False, plan: str = "emprendedor"):
     with conn() as c:
-        c.execute("INSERT OR REPLACE INTO sites (id,url,platform,creds,status,created,allow_general) "
-                  "VALUES (?,?,?,?,?,?,?)",
-                  (site_id, url, platform, json.dumps(creds or {}), "en cola", time.time(), int(allow_general)))
+        c.execute("INSERT OR REPLACE INTO sites (id,url,platform,creds,status,created,allow_general,plan) "
+                  "VALUES (?,?,?,?,?,?,?,?)",
+                  (site_id, url, platform, json.dumps(creds or {}), "en cola", time.time(), int(allow_general), plan))
 
 
 def update_site(site_id: str, **fields):
@@ -80,7 +84,7 @@ def get_site(site_id: str) -> dict | None:
 
 def list_sites() -> list[dict]:
     with conn() as c:
-        rows = c.execute("SELECT id,url,name,platform,status,pages,products,crawled_at,crawl_info FROM sites "
+        rows = c.execute("SELECT id,url,name,platform,status,pages,products,crawled_at,crawl_info,plan FROM sites "
                          "ORDER BY created DESC").fetchall()
     out = []
     for r in rows:
@@ -157,3 +161,57 @@ def delete_site(site_id: str) -> bool:
         c.execute("DELETE FROM messages WHERE site_id=?", (site_id,))
         c.execute("DELETE FROM chunks WHERE site_id=?", (site_id,))
         return c.execute("DELETE FROM sites WHERE id=?", (site_id,)).rowcount > 0
+
+
+
+# ---------------------------------------------------------------- Planes y uso (Bloque 5)
+
+PLANS = {"emprendedor": 500, "pyme": 2000, "pro": 8000}  # conversaciones por mes
+WARN_SHARE = 0.8
+AR_OFFSET = -3 * 3600  # hora de Argentina: UTC-3 fijo (no hay horario de verano desde 2009)
+
+
+def month_start(now: float | None = None) -> float:
+    """Comienzo del mes calendario en hora de Argentina, como timestamp UTC."""
+    import calendar
+    local = time.gmtime((now if now is not None else time.time()) + AR_OFFSET)
+    return calendar.timegm((local.tm_year, local.tm_mon, 1, 0, 0, 0)) - AR_OFFSET
+
+
+def _counted(c, site_id: str, since: float) -> str:
+    """Mensajes que cuentan para el uso: del mes, de visitantes reales y no rechazados por límite."""
+    return (f"site_id=? AND ts>=? AND status!='limite' "
+            f"AND session NOT IN ({','.join('?' * len(INTERNAL_SESSIONS))})")
+
+
+def usage(site_id: str, now: float | None = None) -> int:
+    """Conversaciones del mes: sesiones distintas. Un mensaje sin sesión cuenta como una conversación."""
+    since = month_start(now)
+    with conn() as c:
+        return c.execute(f"SELECT COUNT(DISTINCT CASE WHEN session='' OR session IS NULL THEN 'm' || id ELSE session END) "
+                         f"FROM messages WHERE {_counted(c, site_id, since)}",
+                         (site_id, since, *INTERNAL_SESSIONS)).fetchone()[0]
+
+
+def session_started(site_id: str, session: str, now: float | None = None) -> bool:
+    """La conversación ya empezó este mes (si llega al límite a mitad de charla, puede terminarla)."""
+    if not session:
+        return False
+    since = month_start(now)
+    with conn() as c:
+        return c.execute(f"SELECT 1 FROM messages WHERE {_counted(c, site_id, since)} AND session=? LIMIT 1",
+                         (site_id, since, *INTERNAL_SESSIONS, session)).fetchone() is not None
+
+
+def plan_status(site_id: str, plan: str | None, now: float | None = None) -> dict:
+    plan = plan if plan in PLANS else "emprendedor"
+    used, limit = usage(site_id, now), PLANS[plan]
+    share = used / limit
+    return {"plan": plan, "limite": limit, "conversaciones_mes": used, "porcentaje": round(share * 100, 1),
+            "estado": "limite" if share >= 1 else "aviso" if share >= WARN_SHARE else "ok"}
+
+
+def set_plan(site_id: str, plan: str):
+    if plan not in PLANS:
+        raise ValueError(plan)
+    update_site(site_id, plan=plan)

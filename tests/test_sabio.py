@@ -781,9 +781,127 @@ def test_pagina_de_presentacion():
 
 def test_sesiones_internas_no_cuentan_en_las_metricas():
     store.init()
+    store.delete_site("t6")  # la base de pruebas persiste entre corridas
     store.create_site("t6", "https://x.com")
     store.log_message("t6", "visitante", "¿hacen envíos?", "-", "respondida", [])
     for s in ("presentacion", "eval", "verificacion"):
         store.log_message("t6", s, f"pregunta de {s}", "-", "sin_info", [])
     st = store.stats("t6")
     assert st["total"] == 1 and st["sin_respuesta"] == [] and len(st["recientes"]) == 1
+
+
+# ---------------------------------------------------------------- Bloque 5: planes y límites de uso
+
+def test_migracion_agrega_el_plan_sin_perder_datos(monkeypatch, tmp_path):
+    import sqlite3
+    db = tmp_path / "vieja.db"
+    c = sqlite3.connect(db)  # esquema de antes del Bloque 5, con datos
+    c.executescript("""CREATE TABLE sites (id TEXT PRIMARY KEY, url TEXT NOT NULL, name TEXT, platform TEXT, creds TEXT,
+      status TEXT DEFAULT 'nuevo', progress INTEGER DEFAULT 0, pages INTEGER DEFAULT 0, products INTEGER DEFAULT 0,
+      profile TEXT, created REAL, crawled_at REAL, error TEXT, allow_general INTEGER DEFAULT 0, contact TEXT);
+      CREATE TABLE chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, site_id TEXT, url TEXT, title TEXT, kind TEXT, text TEXT, product TEXT);
+      CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, site_id TEXT, session TEXT, question TEXT, answer TEXT,
+      status TEXT, sources TEXT, ts REAL);
+      INSERT INTO sites (id, url, name, status, pages) VALUES ('demo-tecnosur', 'https://x/demo/tecnosur', 'TecnoSur', 'listo', 18);
+      INSERT INTO chunks (site_id, url, title, kind, text) VALUES ('demo-tecnosur', '/envios', 'Envíos', 'page', 'Envíos a todo el país');
+      INSERT INTO messages (site_id, session, question, answer, status, ts) VALUES ('demo-tecnosur', 's', 'q', 'a', 'respondida', 1);""")
+    c.commit()
+    c.close()
+    monkeypatch.setattr(store, "DB_PATH", str(db))
+    store.init()
+    s = store.get_site("demo-tecnosur")
+    assert s["plan"] == "emprendedor" and s["name"] == "TecnoSur" and s["pages"] == 18
+    assert store.get_chunks("demo-tecnosur")[0]["text"] == "Envíos a todo el país"
+    assert store.stats("demo-tecnosur")["total"] == 1
+
+
+def test_mes_en_hora_argentina():
+    import calendar
+    nov = calendar.timegm((2026, 11, 1, 3, 0, 0))  # 1/11 00:00 en Argentina
+    assert store.month_start(calendar.timegm((2026, 12, 1, 2, 59, 0))) == nov  # todavía 30/11 en Argentina
+    assert store.month_start(calendar.timegm((2026, 12, 1, 3, 0, 0))) == calendar.timegm((2026, 12, 1, 3, 0, 0))
+
+
+def _mensaje(site, session, ts, status="respondida"):
+    with store.conn() as c:
+        c.execute("INSERT INTO messages (site_id,session,question,answer,status,sources,ts) VALUES (?,?,?,?,?,?,?)",
+                  (site, session, "q", "a", status, "[]", ts))
+
+
+def test_uso_cuenta_conversaciones_del_mes():
+    import calendar
+    store.init()
+    store.delete_site("uso")  # la base de pruebas persiste entre corridas
+    store.create_site("uso", "https://uso.com")
+    ahora = calendar.timegm((2026, 11, 15, 12, 0, 0))
+    for s in ("a", "a", "b", "presentacion", "eval", "verificacion"):
+        _mensaje("uso", s, ahora)
+    _mensaje("uso", "", ahora)
+    _mensaje("uso", "", ahora)  # sin sesión: cada mensaje es una conversación
+    _mensaje("uso", "c", calendar.timegm((2026, 10, 20, 12, 0, 0)))  # mes anterior
+    _mensaje("uso", "d", ahora, status="limite")  # rechazado por límite: no suma
+    assert store.usage("uso", ahora) == 4
+    assert store.session_started("uso", "a", ahora) and not store.session_started("uso", "c", ahora)
+
+
+def test_avisos_al_80_y_al_100(monkeypatch):
+    import calendar
+    monkeypatch.setitem(store.PLANS, "emprendedor", 5)
+    store.init()
+    store.delete_site("aviso")  # la base de pruebas persiste entre corridas
+    store.create_site("aviso", "https://aviso.com")
+    ahora = calendar.timegm((2026, 11, 15, 12, 0, 0))
+    estados = []
+    for i in range(5):
+        _mensaje("aviso", f"s{i}", ahora)
+        estados.append(store.plan_status("aviso", "emprendedor", ahora)["estado"])
+    assert estados == ["ok", "ok", "ok", "aviso", "limite"]
+    assert store.plan_status("aviso", "pro", ahora) == {"plan": "pro", "limite": 8000, "conversaciones_mes": 5,
+                                                        "porcentaje": 0.1, "estado": "ok"}
+
+
+def test_al_limite_el_widget_responde_con_el_contacto(monkeypatch):
+    from app import main
+    monkeypatch.setitem(store.PLANS, "emprendedor", 2)
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave")
+    _site()
+    store.delete_site("lim2")  # la base de pruebas persiste entre corridas
+    store.create_site("lim2", "https://materiasur.com")  # sitio nuevo: plan emprendedor
+    store.replace_chunks("lim2", store.get_chunks("t1"))
+    store.update_site("lim2", status="listo", profile=store.get_site("t1")["profile"], crawled_at=2.0)
+    c = _client()
+    chat = lambda s, q="¿tienen stock del mate imperial?": c.post(  # noqa: E731
+        "/api/chat", json={"site_id": "lim2", "message": q, "session": s}).json()
+    assert chat("a")["estado"] == "respondida" and chat("b")["estado"] == "respondida"
+    r = chat("c")  # tercera conversación del mes con límite 2
+    assert r["estado"] == "limite" and "hola@materiasur.com.ar" in r["respuesta"] and r["fuentes"] == []
+    assert chat("a")["estado"] == "respondida"            # la conversación empezada puede seguir
+    assert chat("presentacion")["estado"] == "respondida"  # las sesiones internas no tienen límite
+    uso = c.get("/api/sites/lim2/stats", headers={"X-Admin-Token": "clave"}).json()["uso"]
+    assert uso["estado"] == "limite" and uso["conversaciones_mes"] == 2
+    # Al subir de plan vuelve a responder
+    r = c.put("/api/sites/lim2/plan", json={"plan": "pyme"}, headers={"X-Admin-Token": "clave"})
+    assert r.status_code == 200 and r.json()["limite"] == 2000
+    assert chat("c")["estado"] == "respondida"
+
+
+def test_cambiar_plan_requiere_clave_y_plan_valido(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave")
+    _site()
+    c = _client()
+    assert c.put("/api/sites/t1/plan", json={"plan": "pro"}).status_code == 401
+    assert c.put("/api/sites/t1/plan", json={"plan": "pro"}, headers={"X-Admin-Token": "mal"}).status_code == 401
+    assert c.put("/api/sites/t1/plan", json={"plan": "gratis"}, headers={"X-Admin-Token": "clave"}).status_code == 400
+    assert c.put("/api/sites/nada/plan", json={"plan": "pro"}, headers={"X-Admin-Token": "clave"}).status_code == 404
+    assert c.put("/api/sites/t1/plan", json={"plan": "pro"}, headers={"X-Admin-Token": "clave"}).status_code == 200
+    assert store.get_site("t1")["plan"] == "pro"
+
+
+def test_sitios_nuevos_emprendedor_y_demos_pro():
+    from app import main
+    store.init()
+    store.create_site("nuevo", "https://nuevo.com")
+    assert store.get_site("nuevo")["plan"] == "emprendedor"
+    main._setup_demo()
+    assert store.get_site("demo-tecnosur")["plan"] == "pro" and store.get_site("demo-dulcepilar")["plan"] == "pro"

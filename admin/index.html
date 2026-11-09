@@ -62,6 +62,12 @@
       <p class="mu" id="ddesc"></p>
       <div class="warn" id="aviso" hidden></div>
       <p class="mu" id="dinfo"></p>
+      <p class="mu"><label>Plan <select id="plan">
+        <option value="emprendedor">Emprendedor · 500 conversaciones/mes</option>
+        <option value="pyme">Pyme · 2.000 conversaciones/mes</option>
+        <option value="pro">Pro · 8.000 conversaciones/mes</option></select></label>
+        <span id="usotxt"></span></p>
+      <div class="warn" id="usowarn" hidden></div>
       <p class="mu">Pegá esta línea antes de &lt;/body&gt; en tu sitio:</p>
       <code id="snippet"></code>
       <p></p>
@@ -134,6 +140,12 @@ async function loadDetail() {
   const rate = st.tasa_resolucion == null ? '-' : Math.round(st.tasa_resolucion * 100) + '%';
   $('#kpi').innerHTML = `<div><b>${st.total}</b><span>consultas</span></div><div><b>${rate}</b><span>resueltas</span></div>
     <div><b>${(st.por_estado.fuera_de_alcance||0)}</b><span>fuera de tema</span></div>`;
+  const u = st.uso || {};
+  if (document.activeElement !== $('#plan')) $('#plan').value = u.plan || 'emprendedor';
+  $('#usotxt').textContent = u.limite ? ` · ${u.conversaciones_mes.toLocaleString('es-AR')} de ${u.limite.toLocaleString('es-AR')} conversaciones este mes (${u.porcentaje.toLocaleString('es-AR')}%)` : '';
+  const uw = u.estado === 'limite' ? '⛔ Llegaste al límite del plan: las conversaciones nuevas reciben el contacto del negocio en lugar del asistente. Cambiá de plan para seguir.'
+           : u.estado === 'aviso' ? `⚠️ Usaste el ${u.porcentaje.toLocaleString('es-AR')}% de las conversaciones del mes.` : '';
+  $('#usowarn').hidden = !uw; $('#usowarn').textContent = uw;
   $('#unans').innerHTML = qlist(st.sin_respuesta);
   $('#offtopic').innerHTML = qlist(st.fuera_de_tema || []);
 }
@@ -145,6 +157,10 @@ $('#f').onsubmit = async e => {
   current = r.id; $('#url').value=''; refresh();
 };
 $('#recrawl').onclick = async () => { await api(`/api/sites/${current}/recrawl`, {method:'POST'}); refresh(); };
+$('#plan').onchange = async () => {
+  if (await api(`/api/sites/${current}/plan`, {method:'PUT', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({plan: $('#plan').value})})) loadDetail();
+};
 $('#delete').onclick = async () => {
   if (!confirm('¿Eliminar este sitio? Se borran sus páginas, productos y conversaciones. No se puede deshacer.')) return;
   if (await api(`/api/sites/${current}`, {method:'DELETE'})) { current = null; $('#detail').hidden = true; refresh(); }

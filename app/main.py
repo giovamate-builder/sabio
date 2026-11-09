@@ -76,7 +76,7 @@ def _setup_demo():
         subprocess.run([sys.executable, str(ROOT / "scripts" / "demo_data.py")], check=True)
     for key, name in DEMO_SITES.items():
         sid = f"demo-{key}"
-        store.create_site(sid, f"{PUBLIC_URL}/demo/{key}")
+        store.create_site(sid, f"{PUBLIC_URL}/demo/{key}", plan="pro")
         ingest_local(sid, ROOT / "demo_sites" / key, f"/demo/{key}/", name)
 
 
@@ -99,6 +99,10 @@ class SiteIn(BaseModel):
     creds: dict | None = None
     allow_general: bool = False
     max_pages: int | None = Field(None, description="Se acota a SABIO_MAX_PAGES")
+
+
+class PlanIn(BaseModel):
+    plan: str = Field(..., description="emprendedor | pyme | pro")
 
 
 class ChatIn(BaseModel):
@@ -170,10 +174,22 @@ def delete_site(site_id: str, x_admin_token: str | None = Header(None)):
     return {"eliminado": site_id}
 
 
+@app.put("/api/sites/{site_id}/plan")
+def change_plan(site_id: str, body: PlanIn, x_admin_token: str | None = Header(None)):
+    _check_admin(x_admin_token)
+    if not store.get_site(site_id):
+        raise HTTPException(404, "Sitio no encontrado")
+    if body.plan not in store.PLANS:
+        raise HTTPException(400, "Plan inválido: emprendedor, pyme o pro")
+    store.set_plan(site_id, body.plan)
+    return store.plan_status(site_id, body.plan)
+
+
 @app.get("/api/sites/{site_id}/stats")
 def stats(site_id: str, x_admin_token: str | None = Header(None)):
     _check_admin(x_admin_token)
-    return store.stats(site_id)
+    s = store.get_site(site_id) or {}
+    return {**store.stats(site_id), "uso": store.plan_status(site_id, s.get("plan"))}
 
 
 @app.post("/api/chat")
@@ -186,6 +202,14 @@ async def chat(body: ChatIn):
     if s["status"] != "listo" and not partial:
         return {"respuesta": "Estoy terminando de leer el sitio, probá en unos minutos.",
                 "estado": "preparando", "fuentes": []}
+    session = body.session or ""
+    # Límite del plan: al 100% las conversaciones nuevas reciben el contacto del negocio en vez del motor.
+    # Una conversación que ya empezó este mes puede terminar; las sesiones internas no cuentan.
+    if session not in store.INTERNAL_SESSIONS and not store.session_started(body.site_id, session):
+        if store.plan_status(body.site_id, s.get("plan"))["estado"] == "limite":
+            text = "En este momento el asistente no está disponible. " + engine.contact_line(s)
+            store.log_message(body.site_id, session, body.message, text, "limite", [])
+            return {"respuesta": text, "estado": "limite", "fuentes": []}
     ans = await engine.answer(body.site_id, body.message, body.history)
     store.log_message(body.site_id, body.session or "", body.message, ans.text, ans.status,
                       [x["url"] for x in ans.sources])
