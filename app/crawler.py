@@ -210,16 +210,49 @@ async def _sitemap_urls(client: httpx.AsyncClient, base: str, limit: int,
 
 BLOCK_CODES = (403, 429, 503)
 MAX_BLOCKS = 3  # respuestas de rechazo seguidas antes de dejar de rastrear
+# Límites de memoria (el plan gratuito de Render tiene 512 MB): una página gigante o un sitio con miles
+# de enlaces no pueden llenar la memoria
+MAX_PAGE_BYTES = 2_000_000
+MAX_PAGE_TEXT = 50_000
+QUEUE_FACTOR = 20  # como mucho max_pages * 20 direcciones pendientes
+CONTACT_LINK = re.compile(r"^(mailto:|tel:)|wa\.me/|whatsapp\.com/", re.I)
+
+
+def scope_prefix(start_url: str) -> str:
+    """Carpeta de la dirección inicial: "apple.com/la/mac" se rastrea solo dentro de /la/,
+    "tienda.com/inicio" o "tienda.com/" recorren todo el sitio."""
+    path = urlparse(start_url).path or "/"
+    return path if path.endswith("/") else path[: path.rfind("/") + 1]
+
+
+def in_scope(url: str, start_url: str, prefix: str) -> bool:
+    return _same_site(url, start_url) and (urlparse(url).path or "/").startswith(prefix)
+
+
+async def _read_html(client: httpx.AsyncClient, url: str):
+    """(respuesta, html) leyendo como mucho MAX_PAGE_BYTES. Devuelve html None si no es HTML."""
+    async with client.stream("GET", url) as r:
+        if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+            return r, None
+        body = bytearray()
+        async for part in r.aiter_bytes():
+            body += part
+            if len(body) >= MAX_PAGE_BYTES:
+                break  # se usa lo leído: alcanza para el contenido principal
+        return r, bytes(body[:MAX_PAGE_BYTES]).decode(r.encoding or "utf-8", errors="replace")
 
 
 async def crawl(start_url: str, max_pages: int = 300, concurrency: int = 6,
-                on_progress=None, info: dict | None = None) -> list[Page]:
-    """`info`, si se pasa, se completa con datos del rastreo (por ejemplo, si el sitio nos bloqueó)."""
+                on_progress=None, info: dict | None = None, out: list[Page] | None = None) -> list[Page]:
+    """`info`, si se pasa, se completa con datos del rastreo (por ejemplo, si el sitio nos bloqueó).
+    `out`, si se pasa, recibe las páginas a medida que se leen: si el rastreo se corta por tiempo,
+    lo leído hasta ese momento no se pierde."""
     if not start_url.startswith(("http://", "https://")):
         start_url = "https://" + start_url
     info = info if info is not None else {}
     info.update(bloqueado=None)
-    pages: list[Page] = []
+    pages: list[Page] = out if out is not None else []
+    prefix = scope_prefix(start_url)
     blocks = 0
     mode = render_mode()
     renderer = Renderer(mode) if mode != "off" else None
@@ -247,7 +280,7 @@ async def crawl(start_url: str, max_pages: int = 300, concurrency: int = 6,
                 if delay:
                     await asyncio.sleep(delay)
                 try:
-                    r = await client.get(u)
+                    r, html = await _read_html(client, u)
                 except httpx.HTTPError:
                     return None
                 if r.status_code in BLOCK_CODES:
@@ -255,9 +288,9 @@ async def crawl(start_url: str, max_pages: int = 300, concurrency: int = 6,
                     info["bloqueado"] = r.status_code
                     return None
                 blocks = 0
-                if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+                if html is None:
                     return None
-                page = parse_page(str(r.url), r.text)
+                page = parse_page(str(r.url), html)
             if renderer and renderer.enabled and needs_render(page, mode):
                 got = await renderer.render(page.url)
                 if got:
@@ -278,7 +311,7 @@ async def crawl(start_url: str, max_pages: int = 300, concurrency: int = 6,
                 batch = []
                 while queue and len(batch) < min(concurrency * 2, max_pages - len(pages)):
                     u = _clean(queue.pop(0))
-                    if (u in seen or not _same_site(u, start_url) or SKIP_EXT.search(urlparse(u).path)
+                    if (u in seen or not in_scope(u, start_url, prefix) or SKIP_EXT.search(urlparse(u).path)
                             or SKIP_PATH.search(urlparse(u).path) or not robots.can_fetch(USER_AGENT, u)):
                         seen.add(u)
                         continue
@@ -287,12 +320,16 @@ async def crawl(start_url: str, max_pages: int = 300, concurrency: int = 6,
                 for page in await asyncio.gather(*(fetch(u) for u in batch)):
                     if page is None:
                         continue
-                    pages.append(page)
                     for href in page.links:
                         nu = _clean(urljoin(page.url, href))
-                        if nu not in seen and _same_site(nu, start_url):
+                        if nu not in seen and in_scope(nu, start_url, prefix) and len(queue) < max_pages * QUEUE_FACTOR:
                             # Las páginas de productos se visitan antes que el resto
                             (queue.insert(0, nu) if PRODUCT_PATH.search(urlparse(nu).path) else queue.append(nu))
+                    # Lo que queda guardado por página es acotado: el texto principal y los enlaces de
+                    # contacto (el perfil los usa para encontrar el WhatsApp o el teléfono)
+                    page.text = page.text[:MAX_PAGE_TEXT]
+                    page.links = [h for h in page.links if CONTACT_LINK.search(h)]
+                    pages.append(page)
                     if on_progress:
                         on_progress(len(pages))
         finally:

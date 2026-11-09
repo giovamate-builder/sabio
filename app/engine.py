@@ -364,3 +364,9 @@ def _refresh_products(hits, live: dict):
                                                          if k in p}).as_text())
         out.append((s, ch, cov))
     return out
+
+
+def forget(site_id: str):
+    """Saca de la memoria el índice y el catálogo de un sitio borrado."""
+    _index_cache.pop(site_id, None)
+    _catalog_cache.pop(site_id, None)

@@ -133,3 +133,21 @@ def stats(site_id: str) -> dict:
             "tasa_resolucion": round(by.get("respondida", 0) / total, 3) if total else None,
             "sin_respuesta": [dict(r) for r in unanswered], "fuera_de_tema": [dict(r) for r in off_topic],
             "recientes": [dict(r) for r in recent]}
+
+
+INTERRUPTED = "El rastreo se interrumpió, volvé a rastrear"
+
+
+def mark_interrupted() -> int:
+    """Al arrancar no hay ningún rastreo corriendo: los que figuran en curso quedaron cortados por un reinicio."""
+    with conn() as c:
+        return c.execute("UPDATE sites SET status='error', error=? WHERE status IN ('rastreando', 'en cola')",
+                         (INTERRUPTED,)).rowcount
+
+
+def delete_site(site_id: str) -> bool:
+    """Borra el sitio, sus fragmentos y sus conversaciones."""
+    with conn() as c:
+        c.execute("DELETE FROM messages WHERE site_id=?", (site_id,))
+        c.execute("DELETE FROM chunks WHERE site_id=?", (site_id,))
+        return c.execute("DELETE FROM sites WHERE id=?", (site_id,)).rowcount > 0

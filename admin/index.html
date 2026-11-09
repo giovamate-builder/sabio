@@ -18,6 +18,7 @@
   input[type=url]{flex:1;min-width:240px}
   button{background:var(--c);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer}
   button.sec{background:#fff;color:var(--c);border:1px solid var(--c)}
+  button.danger{background:#fff;color:#a32020;border:1px solid #a32020;margin-left:6px}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd)}
   th{color:var(--mu);font-weight:500;font-size:12px;text-transform:uppercase}
@@ -72,7 +73,7 @@
       <h2>Preguntas fuera de tema</h2>
       <p class="mu">Consultas que no tienen que ver con el rubro del sitio. El asistente las rechaza.</p>
       <ul id="offtopic"></ul>
-      <p></p><button class="sec" id="recrawl">Volver a rastrear</button>
+      <p></p><button class="sec" id="recrawl">Volver a rastrear</button><button class="danger" id="delete">Eliminar sitio</button>
     </section>
     <section class="card">
       <h2>Probar el asistente</h2>
@@ -87,17 +88,21 @@ let current = null, history = [];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const qlist = l => l.length ? l.map(u => `<li>${esc(u.question)} <span class="mu">(${u.n})</span></li>`).join('') : '<li class="mu">Todavía no hay.</li>';
 function tok() { try { return localStorage.getItem('sabio_admin') || ''; } catch (e) { return ''; } }
-async function api(p, o) {
+async function api(p, o, quiet) {
   o = o || {}; o.headers = Object.assign({}, o.headers || {}, {'X-Admin-Token': tok()});
   let r = await fetch(p, o);
   if (r.status === 401) {
     const t = prompt('Clave de administración'); try { localStorage.setItem('sabio_admin', t || ''); } catch (e) {}
     o.headers['X-Admin-Token'] = t || ''; r = await fetch(p, o);
   }
-  return r.json();
+  const data = await r.json().catch(() => ({}));
+  // 409 (ya hay un rastreo en curso), 403, 404…: se muestra el motivo en lugar de fallar en silencio
+  if (!r.ok) { if (!quiet) alert(data.detail || `Error ${r.status}`); return null; }
+  return data;
 }
 async function refresh() {
-  const sites = await api('/api/sites');
+  const sites = await api('/api/sites', null, true);  // se actualiza sola: sin alertas
+  if (!sites) return;
   $('#list').innerHTML = sites.map(s => { const ci = s.crawl_info || {};
     return `<tr data-id="${esc(s.id)}" class="${s.id===current?'sel':''}"><td>${esc(s.name||s.url)}${ci.aviso ? ' <span title="Se leyó poco contenido">⚠️</span>' : ''}<div class="mu">${esc(s.url)}</div></td>
     <td><span class="pill ${esc(s.status)}">${esc(s.status)}</span></td><td>${s.pages||0}${ci.renderizadas ? ` <span class="mu">(${ci.renderizadas} con navegador)</span>` : ''}</td><td>${s.products||0}</td><td>${esc(s.platform||'-')}</td></tr>`; }).join('');
@@ -106,14 +111,16 @@ async function refresh() {
 }
 async function select(id) { current = id; history = []; $('#chat').innerHTML=''; refresh(); }
 async function loadDetail() {
-  const s = await api('/api/sites/' + current), st = await api(`/api/sites/${current}/stats`);
+  const s = await api('/api/sites/' + current, null, true), st = await api(`/api/sites/${current}/stats`, null, true);
+  if (!s || !st) { current = null; $('#detail').hidden = true; return; }
   $('#detail').hidden = false;
+  $('#delete').hidden = String(s.id || '').startsWith('demo-');
   $('#dname').textContent = s.name || s.url;
   $('#ddesc').textContent = (s.profile && s.profile.descripcion) || '';
   const ci = s.crawl_info || {};
   const aviso = s.status === 'error' ? (s.error || 'No se pudo leer el sitio.') : ci.aviso;
   $('#aviso').hidden = !aviso; $('#aviso').textContent = aviso ? '⚠️ ' + aviso : '';
-  $('#dinfo').textContent = s.status === 'listo' ? `${s.pages||0} páginas leídas (${ci.renderizadas||0} renderizadas con navegador) · ${s.products||0} productos` : '';
+  $('#dinfo').textContent = s.status === 'listo' || ci.parcial ? `${s.pages||0} páginas leídas (${ci.renderizadas||0} renderizadas con navegador) · ${s.products||0} productos` : '';
   $('#snippet').textContent = `<script src="${location.origin}/widget.js" data-site="${s.id}" defer><\/script>`;
   const rate = st.tasa_resolucion == null ? '-' : Math.round(st.tasa_resolucion * 100) + '%';
   $('#kpi').innerHTML = `<div><b>${st.total}</b><span>consultas</span></div><div><b>${rate}</b><span>resueltas</span></div>
@@ -125,9 +132,14 @@ $('#f').onsubmit = async e => {
   e.preventDefault();
   const r = await api('/api/sites', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({url: $('#url').value, platform: $('#platform').value || null, allow_general: $('#general').checked})});
+  if (!r) return;
   current = r.id; $('#url').value=''; refresh();
 };
 $('#recrawl').onclick = async () => { await api(`/api/sites/${current}/recrawl`, {method:'POST'}); refresh(); };
+$('#delete').onclick = async () => {
+  if (!confirm('¿Eliminar este sitio? Se borran sus páginas, productos y conversaciones. No se puede deshacer.')) return;
+  if (await api(`/api/sites/${current}`, {method:'DELETE'})) { current = null; $('#detail').hidden = true; refresh(); }
+};
 $('#cf').onsubmit = async e => {
   e.preventDefault(); const q = $('#q').value.trim(); if (!q) return; $('#q').value='';
   add('u', q);

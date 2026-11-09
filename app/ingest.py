@@ -1,6 +1,15 @@
-"""Absorción de un sitio: rastreo + catálogo de la plataforma + índice + perfil."""
+"""Absorción de un sitio: rastreo + catálogo de la plataforma + índice + perfil.
+
+Límites (pensados para los 512 MB del plan gratuito de Render):
+- SABIO_MAX_PAGES: páginas por rastreo (300 por defecto; en render.yaml, 60).
+- SABIO_CRAWL_TIMEOUT_S: tiempo máximo de un rastreo (180 s). Si se pasa, el sitio queda en "error"
+  con un mensaje para el panel, y lo leído hasta ese momento se conserva si sirve para responder.
+- Un solo rastreo a la vez en todo el servidor (incluido el re-rastreo automático).
+"""
 from __future__ import annotations
 
+import asyncio
+import os
 import time
 
 from . import semantic, store
@@ -8,6 +17,40 @@ from .connectors import detect_platform, fetch_catalog
 from .crawler import crawl, render_mode
 from .search import build_profile, chunk_pages
 from .textutil import strip_accents
+
+
+def max_pages_limit() -> int:
+    return max(1, int(os.environ.get("SABIO_MAX_PAGES", "300")))
+
+
+def crawl_timeout_s() -> float:
+    return max(1.0, float(os.environ.get("SABIO_CRAWL_TIMEOUT_S", "180")))
+
+
+class CrawlBusy(RuntimeError):
+    """Ya hay un rastreo en curso."""
+
+
+_current: str | None = None  # sitio que se está rastreando
+
+
+def busy() -> str | None:
+    return _current
+
+
+def reserve(site_id: str) -> bool:
+    """Toma el turno de rastreo. Es sincrónico: dos pedidos simultáneos no pueden ganar los dos."""
+    global _current
+    if _current is not None:
+        return False
+    _current = site_id
+    return True
+
+
+def release(site_id: str):
+    global _current
+    if _current == site_id:
+        _current = None
 
 
 def add_vectors(chunks: list[dict]) -> str | None:
@@ -36,29 +79,59 @@ def crawl_info(pages, products, blocked: int | None = None) -> dict:
     return {"caracteres": chars, "renderizadas": rendered, "bloqueado": blocked, "aviso": " ".join(avisos) or None}
 
 
-async def ingest_site(site_id: str, max_pages: int = 300) -> dict:
+async def ingest_site(site_id: str, max_pages: int | None = None, reserved: bool = False) -> dict:
+    """Rastrea e indexa un sitio. `reserved` indica que quien llama ya tomó el turno con reserve()."""
+    if not reserved and not reserve(site_id):
+        raise CrawlBusy(f"Ya hay un rastreo en curso ({busy()})")
+    try:
+        return await _ingest(site_id, min(max_pages or max_pages_limit(), max_pages_limit()))
+    finally:
+        release(site_id)
+
+
+async def _ingest(site_id: str, max_pages: int) -> dict:
     site = store.get_site(site_id)
     store.update_site(site_id, status="rastreando", progress=0, error=None)
     t0 = time.time()
+    limit = crawl_timeout_s()
+    deadline = t0 + limit
+    pages: list = []
+    timed_out = False
     try:
         run_info: dict = {}
-        pages = await crawl(site["url"], max_pages=max_pages, info=run_info,
-                            on_progress=lambda n: store.update_site(site_id, progress=n))
+        try:
+            await asyncio.wait_for(crawl(site["url"], max_pages=max_pages, info=run_info, out=pages,
+                                         on_progress=lambda n: store.update_site(site_id, progress=n)),
+                                   timeout=limit)
+        except asyncio.TimeoutError:
+            timed_out = True
         products = [p for pg in pages for p in pg.products]
-        platform = site.get("platform") or await detect_platform(site["url"])
-        if platform:
-            api_products = await fetch_catalog(platform, site["url"], site.get("creds"))
-            if api_products:
-                # Los datos de la API mandan (stock y precio actualizados)
-                by_name = {strip_accents(p.name.lower()): p for p in products}
-                for ap in api_products:
-                    by_name[strip_accents(ap.name.lower())] = ap
-                products = list(by_name.values())
+        platform = site.get("platform")
+        if not timed_out:
+            try:
+                # El catálogo de la plataforma también entra en el tiempo máximo
+                remaining = max(1.0, deadline - time.time())
+                platform = platform or await asyncio.wait_for(detect_platform(site["url"]), remaining)
+                if platform:
+                    api_products = await asyncio.wait_for(
+                        fetch_catalog(platform, site["url"], site.get("creds")), max(1.0, deadline - time.time()))
+                    if api_products:
+                        # Los datos de la API mandan (stock y precio actualizados)
+                        by_name = {strip_accents(p.name.lower()): p for p in products}
+                        for ap in api_products:
+                            by_name[strip_accents(ap.name.lower())] = ap
+                        products = list(by_name.values())
+            except asyncio.TimeoutError:
+                timed_out = True
         # Un mismo producto puede aparecer en varias páginas: se deja uno por nombre
         uniq = {}
         for p in products:
             uniq.setdefault(strip_accents(p.name.lower()), p)
         products = list(uniq.values())
+        usable = any(p.text.strip() for p in pages) or bool(products)
+        if timed_out and not usable:
+            raise RuntimeError(f"El rastreo superó el tiempo máximo ({limit:.0f} s) sin leer contenido útil. "
+                               "Probá de nuevo más tarde.")
         if not pages and not products:
             if run_info.get("bloqueado"):
                 raise RuntimeError(f"El sitio rechazó al rastreador (HTTP {run_info['bloqueado']}). "
@@ -67,10 +140,15 @@ async def ingest_site(site_id: str, max_pages: int = 300) -> dict:
         chunks = chunk_pages(pages, products)
         profile = build_profile(pages, products)
         info = crawl_info(pages, products, run_info.get("bloqueado"))
+        info["parcial"] = timed_out
         emb_model = add_vectors(chunks)
         store.replace_chunks(site_id, chunks)
-        store.update_site(site_id, status="listo", pages=len(pages), products=len(products),
-                          profile=profile, name=profile["nombre"], platform=platform,
+        error = None
+        if timed_out:
+            error = (f"El rastreo superó el tiempo máximo ({limit:.0f} s). Se guardaron {len(pages)} páginas y "
+                     f"{len(products)} productos: el asistente responde con eso. Volvé a rastrear para completarlo.")
+        store.update_site(site_id, status="error" if timed_out else "listo", error=error, pages=len(pages),
+                          products=len(products), profile=profile, name=profile["nombre"], platform=platform,
                           crawled_at=time.time(), crawl_info=info, emb_model=emb_model)
         return {"paginas": len(pages), "productos": len(products), "fragmentos": len(chunks),
                 "segundos": round(time.time() - t0, 1), "plataforma": platform, **info}

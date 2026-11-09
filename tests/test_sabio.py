@@ -446,3 +446,155 @@ def test_estadisticas_separan_fuera_de_tema():
     st = store.stats("t3")
     assert [x["question"] for x in st["fuera_de_tema"]] == ["receta de chocotorta"]
     assert [x["question"] for x in st["sin_respuesta"]] == ["¿abren los lunes?"]
+
+
+# ---------------------------------------------------------------- Bloque 1: estabilidad del rastreo
+
+def _client():
+    from fastapi.testclient import TestClient
+    from app import main
+    return TestClient(main.app)  # sin "with": no corre el arranque (demo, re-rastreo)
+
+
+def _mock_web(monkeypatch, handler):
+    from app import crawler, ingest
+    real = httpx.AsyncClient
+    monkeypatch.setattr(crawler.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+    async def no_platform(url):
+        return None
+    monkeypatch.setattr(ingest, "detect_platform", no_platform)
+    monkeypatch.setenv("SABIO_RENDER_JS", "off")
+
+
+def _sitio_con_enlaces(n=40):
+    def handler(req):
+        if req.url.path in ("/robots.txt", "/sitemap.xml"):
+            return httpx.Response(404)
+        links = "".join(f'<a href="/p{i}">p{i}</a>' for i in range(n))
+        return httpx.Response(200, html=f"<html><body><main><h1>Página {req.url.path}</h1>"
+                                        f"<p>Texto de la página {req.url.path}.</p>{links}</main></body></html>")
+    return handler
+
+
+def test_limite_de_paginas_configurable(monkeypatch):
+    from app import ingest
+    _mock_web(monkeypatch, _sitio_con_enlaces())
+    monkeypatch.setenv("SABIO_MAX_PAGES", "5")
+    store.init()
+    store.create_site("lim", "https://limite.com")
+    info = run(ingest.ingest_site("lim", max_pages=1000))  # el pedido no puede pasar el límite del servidor
+    assert info["paginas"] == 5 and store.get_site("lim")["status"] == "listo"
+
+
+def test_rastreo_cortado_por_tiempo_conserva_lo_leido(monkeypatch):
+    from app import ingest
+
+    async def lento(url, max_pages, info, out, on_progress):
+        out.append(parse_page("https://lento.com/envios", FAQ_HTML))
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(ingest, "crawl", lento)
+    monkeypatch.setenv("SABIO_CRAWL_TIMEOUT_S", "1")
+    store.init()
+    store.create_site("lento", "https://lento.com")
+    run(ingest.ingest_site("lento"))
+    s = store.get_site("lento")
+    assert s["status"] == "error" and "tiempo máximo (1 s)" in s["error"] and "1 páginas" in s["error"]
+    assert s["crawl_info"]["parcial"] and store.get_chunks("lento")
+    r = _client().post("/api/chat", json={"site_id": "lento", "message": "¿hacen envíos?"}).json()
+    assert r["estado"] == "respondida" and "todo el país" in r["respuesta"]  # responde con lo leído
+
+
+def test_rastreo_cortado_sin_contenido_queda_en_error(monkeypatch):
+    from app import ingest
+
+    async def colgado(url, max_pages, info, out, on_progress):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(ingest, "crawl", colgado)
+    monkeypatch.setenv("SABIO_CRAWL_TIMEOUT_S", "1")
+    store.init()
+    store.create_site("colgado", "https://colgado.com")
+    with pytest.raises(RuntimeError):
+        run(ingest.ingest_site("colgado"))
+    s = store.get_site("colgado")
+    assert s["status"] == "error" and "sin leer contenido" in s["error"]
+    r = _client().post("/api/chat", json={"site_id": "colgado", "message": "hola"}).json()
+    assert r["estado"] == "preparando"
+
+
+def test_un_solo_rastreo_a_la_vez(monkeypatch):
+    from app import ingest, main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "")
+    monkeypatch.setenv("SABIO_ALLOW_PRIVATE", "1")
+    store.init()
+    store.create_site("ocupado", "https://ocupado.com")
+    assert ingest.reserve("ocupado")
+    try:
+        c = _client()
+        r = c.post("/api/sites", json={"url": "https://otro.com"})
+        assert r.status_code == 409 and "rastreo en curso" in r.json()["detail"]
+        assert c.post("/api/sites/t1/recrawl").status_code == 409
+        with pytest.raises(ingest.CrawlBusy):
+            run(ingest.ingest_site("t1"))
+        assert not ingest.reserve("t1")
+    finally:
+        ingest.release("ocupado")
+    assert ingest.busy() is None
+
+
+def test_arranque_marca_rastreos_interrumpidos():
+    from app import main
+    store.init()
+    store.create_site("trabado", "https://trabado.com")
+    store.update_site("trabado", status="rastreando")
+    run(main._startup())
+    s = store.get_site("trabado")
+    assert s["status"] == "error" and s["error"] == "El rastreo se interrumpió, volvé a rastrear"
+
+
+def test_borrar_sitio(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave")
+    store.init()
+    store.create_site("borrar", "https://borrar.com")
+    store.replace_chunks("borrar", [{"url": "u", "title": "t", "kind": "page", "text": "x"}])
+    store.log_message("borrar", "s", "q", "a", "respondida", [])
+    store.create_site("demo-tecnosur", "https://x/demo/tecnosur")
+    c = _client()
+    assert c.delete("/api/sites/borrar").status_code == 401
+    assert c.delete("/api/sites/borrar", headers={"X-Admin-Token": "mal"}).status_code == 401
+    assert c.delete("/api/sites/demo-tecnosur", headers={"X-Admin-Token": "clave"}).status_code == 403
+    assert c.delete("/api/sites/no-existe", headers={"X-Admin-Token": "clave"}).status_code == 404
+    assert c.delete("/api/sites/borrar", headers={"X-Admin-Token": "clave"}).status_code == 200
+    assert store.get_site("borrar") is None and store.get_chunks("borrar") == []
+    assert store.stats("borrar")["total"] == 0 and store.get_site("demo-tecnosur")
+
+
+def test_rastreo_queda_dentro_de_la_carpeta_inicial(monkeypatch):
+    from app.crawler import crawl, scope_prefix
+    assert scope_prefix("https://apple.com/la/mac") == "/la/"
+    assert scope_prefix("https://tienda.com/inicio") == "/" and scope_prefix("https://tienda.com") == "/"
+
+    def handler(req):
+        if req.url.path in ("/robots.txt", "/sitemap.xml"):
+            return httpx.Response(404)
+        return httpx.Response(200, html='<html><body><main><p>Hola mundo, texto.</p><a href="/la/ipad">ipad</a>'
+                                        '<a href="/us/mac">us</a><a href="/la/iphone">iphone</a></main></body></html>')
+    _mock_web(monkeypatch, handler)
+    paths = sorted(p.url.split("apple.com")[1] for p in run(crawl("https://apple.com/la/mac", max_pages=50)))
+    assert paths == ["/la/ipad", "/la/iphone", "/la/mac"]
+
+
+def test_pagina_gigante_no_llena_la_memoria(monkeypatch):
+    from app.crawler import MAX_PAGE_TEXT, crawl
+    enorme = "<html><body><main>" + "<p>Texto repetido de una página enorme.</p>" * 200_000 + "</main></body></html>"
+
+    def handler(req):
+        if req.url.path in ("/robots.txt", "/sitemap.xml"):
+            return httpx.Response(404)
+        return httpx.Response(200, html=enorme)  # unos 8 MB
+    _mock_web(monkeypatch, handler)
+    pages = run(crawl("https://enorme.com", max_pages=1))
+    assert len(pages) == 1 and 0 < len(pages[0].text) <= MAX_PAGE_TEXT

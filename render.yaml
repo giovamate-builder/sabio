@@ -12,6 +12,11 @@ services:
         value: /tmp/sabio.db
       # Chromium necesita cerca de 1 GB y el plan gratuito tiene 512 MB: el navegador queda apagado.
       # Con un plan de 2 GB (Standard) se puede poner "auto". Ver DEPLOY.md.
+      # Límites del rastreo para no pasar los 512 MB: páginas por sitio y tiempo máximo (segundos)
+      - key: SABIO_MAX_PAGES
+        value: "60"
+      - key: SABIO_CRAWL_TIMEOUT_S
+        value: "180"
       - key: SABIO_RENDER_JS
         value: "off"
       - key: ANTHROPIC_API_KEY

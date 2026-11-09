@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from pydantic import BaseModel, Field
 
 from . import engine, store
+from . import ingest
 from .ingest import ingest_local, ingest_site
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +39,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.on_event("startup")
 async def _startup():
     store.init()
+    n = store.mark_interrupted()
+    if n:
+        print(f"SABIO: {n} sitio(s) quedaron con el rastreo cortado por un reinicio; se marcaron como error.")
     if DEMO:
         _setup_demo()
     asyncio.create_task(_recrawl_loop())
@@ -60,8 +64,10 @@ async def _recrawl_loop():
         await asyncio.sleep(3600)
         for s in store.list_sites():
             if s["status"] == "listo" and time.time() - (s["crawled_at"] or 0) > RECRAWL_HOURS * 3600:
+                if not ingest.reserve(s["id"]):
+                    break  # hay un rastreo manual en curso: se reintenta en la próxima vuelta
                 try:
-                    await ingest_site(s["id"])
+                    await ingest_site(s["id"], reserved=True)
                 except Exception:
                     pass
 
@@ -71,7 +77,7 @@ class SiteIn(BaseModel):
     platform: str | None = Field(None, description="shopify | woocommerce | tiendanube (opcional, se detecta)")
     creds: dict | None = None
     allow_general: bool = False
-    max_pages: int = 300
+    max_pages: int | None = Field(None, description="Se acota a SABIO_MAX_PAGES")
 
 
 class ChatIn(BaseModel):
@@ -81,6 +87,14 @@ class ChatIn(BaseModel):
     history: list[dict] | None = None
 
 
+def _reserve_or_409(site_id: str):
+    """Un solo rastreo a la vez: cada rastreo puede ocupar buena parte de los 512 MB del servidor."""
+    if not ingest.reserve(site_id):
+        current = store.get_site(ingest.busy()) or {}
+        raise HTTPException(409, f"Ya hay un rastreo en curso ({current.get('name') or current.get('url') or ingest.busy()}). "
+                                 "Esperá a que termine y volvé a intentar.")
+
+
 @app.post("/api/sites")
 async def create_site(body: SiteIn, bg: BackgroundTasks, x_admin_token: str | None = Header(None)):
     _check_admin(x_admin_token)
@@ -88,8 +102,9 @@ async def create_site(body: SiteIn, bg: BackgroundTasks, x_admin_token: str | No
     if not is_public_url(body.url):
         raise HTTPException(400, "La dirección no es un sitio público")
     site_id = "s_" + secrets.token_hex(5)
+    _reserve_or_409(site_id)
     store.create_site(site_id, body.url.rstrip("/"), body.platform, body.creds, body.allow_general)
-    bg.add_task(ingest_site, site_id, body.max_pages)
+    bg.add_task(ingest_site, site_id, body.max_pages, True)
     return {"id": site_id, "estado": "en cola",
             "snippet": f'<script src="{{SABIO_URL}}/widget.js" data-site="{site_id}" defer></script>'}
 
@@ -113,8 +128,23 @@ async def recrawl(site_id: str, bg: BackgroundTasks, x_admin_token: str | None =
     _check_admin(x_admin_token)
     if not store.get_site(site_id):
         raise HTTPException(404, "Sitio no encontrado")
-    bg.add_task(ingest_site, site_id)
+    _reserve_or_409(site_id)
+    bg.add_task(ingest_site, site_id, None, True)
     return {"estado": "en cola"}
+
+
+@app.delete("/api/sites/{site_id}")
+def delete_site(site_id: str, x_admin_token: str | None = Header(None)):
+    _check_admin(x_admin_token)
+    if site_id.startswith("demo-"):
+        raise HTTPException(403, "Los sitios de ejemplo no se pueden eliminar")
+    if not store.get_site(site_id):
+        raise HTTPException(404, "Sitio no encontrado")
+    if ingest.busy() == site_id:
+        raise HTTPException(409, "El sitio se está rastreando: esperá a que termine para eliminarlo")
+    store.delete_site(site_id)
+    engine.forget(site_id)
+    return {"eliminado": site_id}
 
 
 @app.get("/api/sites/{site_id}/stats")
@@ -127,7 +157,9 @@ async def chat(body: ChatIn):
     s = store.get_site(body.site_id)
     if not s:
         raise HTTPException(404, "Sitio no encontrado")
-    if s["status"] != "listo":
+    # Un rastreo cortado por tiempo deja el sitio en "error", pero con lo leído se puede responder
+    partial = s["status"] == "error" and (s.get("crawl_info") or {}).get("parcial")
+    if s["status"] != "listo" and not partial:
         return {"respuesta": "Estoy terminando de leer el sitio, probá en unos minutos.",
                 "estado": "preparando", "fuentes": []}
     ans = await engine.answer(body.site_id, body.message, body.history)
