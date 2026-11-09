@@ -208,12 +208,63 @@ async def chat(body: ChatIn):
     if session not in store.INTERNAL_SESSIONS and not store.session_started(body.site_id, session):
         if store.plan_status(body.site_id, s.get("plan"))["estado"] == "limite":
             text = "En este momento el asistente no está disponible. " + engine.contact_line(s)
-            store.log_message(body.site_id, session, body.message, text, "limite", [])
-            return {"respuesta": text, "estado": "limite", "fuentes": []}
+            mid = store.log_message(body.site_id, session, body.message, text, "limite", [])
+            return {"respuesta": text, "estado": "limite", "fuentes": [], "message_id": mid}
     ans = await engine.answer(body.site_id, body.message, body.history)
-    store.log_message(body.site_id, body.session or "", body.message, ans.text, ans.status,
-                      [x["url"] for x in ans.sources])
-    return ans.to_dict()
+    mid = store.log_message(body.site_id, session, body.message, ans.text, ans.status,
+                            [x["url"] for x in ans.sources])
+    return {**ans.to_dict(), "message_id": mid}
+
+
+class FeedbackIn(BaseModel):
+    site_id: str
+    message_id: int
+    valor: int = Field(..., description="1 = útil (👍), -1 = no útil (👎)")
+    session: str | None = None
+
+
+@app.post("/api/feedback")
+def feedback(body: FeedbackIn):
+    """Voto 👍/👎 del widget. Público como /api/chat: no expone datos y acepta un voto por mensaje."""
+    if body.valor not in (1, -1):
+        raise HTTPException(400, "El voto tiene que ser 1 (útil) o -1 (no útil)")
+    try:
+        store.add_feedback(body.site_id, body.message_id, body.valor, body.session)
+    except store.FeedbackError as e:
+        raise HTTPException(e.status, str(e))
+    return {"ok": True}
+
+
+@app.get("/api/sites/{site_id}/report")
+def report(site_id: str, mes: str | None = None, x_admin_token: str | None = Header(None)):
+    """Reporte mensual en CSV (separador ";" y BOM UTF-8 para que Excel en castellano lo abra bien)."""
+    import csv
+    import io
+    _check_admin(x_admin_token)
+    site = store.get_site(site_id)
+    if not site:
+        raise HTTPException(404, "Sitio no encontrado")
+    try:
+        r = store.month_report(site_id, mes)
+    except ValueError:
+        raise HTTPException(400, "El mes tiene que tener el formato AAAA-MM")
+    pct = lambda v: "-" if v is None else f"{v:.1f}%".replace(".", ",")  # noqa: E731
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+    w.writerow(["Reporte SABIO", site.get("name") or site["url"], r["mes"]])
+    w.writerow([])
+    w.writerow(["Consultas totales", r["total"]])
+    w.writerow(["% resueltas", pct(r["resueltas"])])
+    w.writerow(["% útiles", pct(r["utiles"]["porcentaje"])])
+    w.writerow(["Votos 👍/👎", r["utiles"]["votos"]])
+    for title, rows in (("Top 10 preguntas sin respuesta", r["sin_respuesta"]),
+                        ("Top 10 preguntas fuera de tema", r["fuera_de_tema"])):
+        w.writerow([])
+        w.writerow([title, "Veces"])
+        w.writerows(rows or [["(ninguna)", 0]])
+    name = f"sabio-{site_id}-{r['mes']}.csv"
+    return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/api/eval")

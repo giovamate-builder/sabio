@@ -666,7 +666,8 @@ def test_el_widget_sigue_funcionando_sin_clave(api_sin_rastreo, monkeypatch):
     assert api_sin_rastreo.get("/widget.js").status_code == 200
     assert api_sin_rastreo.get("/api/health").status_code == 200
     widget = (ROOT / "widget" / "widget.js").read_text(encoding="utf-8")
-    assert set(__import__("re").findall(r"/api/[a-z/]+", widget)) == {"/api/chat"}  # el widget solo usa el chat
+    # el widget solo usa rutas públicas: el chat y el voto 👍/👎 (Bloque 6)
+    assert set(__import__("re").findall(r"/api/[a-z/]+", widget)) == {"/api/chat", "/api/feedback"}
 
 
 # ---------------------------------------------------------------- Bloque 3: calidad de respuestas
@@ -905,3 +906,84 @@ def test_sitios_nuevos_emprendedor_y_demos_pro():
     assert store.get_site("nuevo")["plan"] == "emprendedor"
     main._setup_demo()
     assert store.get_site("demo-tecnosur")["plan"] == "pro" and store.get_site("demo-dulcepilar")["plan"] == "pro"
+
+
+# ---------------------------------------------------------------- Bloque 6: satisfacción y reporte
+
+def _chat_con_id(c, session="v1", site="t1", q="¿tienen stock del mate imperial?"):
+    r = c.post("/api/chat", json={"site_id": site, "message": q, "session": session}).json()
+    assert isinstance(r["message_id"], int)
+    return r["message_id"]
+
+
+def test_feedback_un_voto_por_mensaje_y_validaciones(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave")  # el voto es público aunque haya clave
+    _site()
+    store.create_site("otro", "https://otro.com")
+    c = _client()
+    mid = _chat_con_id(c)
+    voto = lambda **kw: c.post("/api/feedback", json={"site_id": "t1", "message_id": mid, "valor": 1,  # noqa: E731
+                                                      "session": "v1", **kw})
+    assert voto(valor=5).status_code == 400
+    assert voto(site_id="otro").status_code == 404           # el mensaje no es de ese sitio
+    assert voto(message_id=10**9).status_code == 404         # no existe
+    assert voto(session="ajena").status_code == 403          # es de otra conversación
+    assert voto().status_code == 200
+    assert voto(valor=-1).status_code == 409                 # un voto por mensaje
+
+
+def test_stats_suman_porcentaje_de_utiles():
+    _site()
+    store.delete_site("util")
+    store.create_site("util", "https://util.com")
+    ids = [store.log_message("util", s, "q", "a", "respondida", []) for s in ("a", "b", "c", "presentacion")]
+    for mid, v, s in zip(ids, (1, 1, -1, -1), ("a", "b", "c", "presentacion")):
+        store.add_feedback("util", mid, v, s)
+    assert store.stats("util")["utiles"] == {"votos": 3, "positivos": 2, "porcentaje": 66.7}  # sin la sesión interna
+    store.delete_site("util")
+    with store.conn() as c:
+        assert c.execute("SELECT COUNT(*) FROM feedback WHERE site_id='util'").fetchone()[0] == 0
+
+
+def test_reporte_mensual_csv(monkeypatch):
+    import calendar
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave")
+    store.init()
+    store.delete_site("rep")
+    store.create_site("rep", "https://rep.com")
+    store.update_site("rep", name="Tienda Rep")
+    nov = calendar.timegm((2026, 11, 10, 15, 0, 0))
+    filas = [("a", "¿hacen envíos?", "respondida"), ("b", "¿abren los lunes?", "sin_info"),
+             ("c", "¿abren los lunes?", "sin_info"), ("d", "receta de pizza", "fuera_de_alcance"),
+             ("eval", "pregunta interna", "sin_info")]
+    ids = []
+    for s, q, st in filas:
+        _mensaje_q = store.log_message("rep", s, q, "-", st, [])
+        ids.append(_mensaje_q)
+        with store.conn() as cn:
+            cn.execute("UPDATE messages SET ts=? WHERE id=?", (nov, _mensaje_q))
+    store.add_feedback("rep", ids[0], 1, "a")
+    store.log_message("rep", "z", "pregunta de diciembre", "-", "sin_info", [])  # otro mes: no entra
+    with store.conn() as cn:
+        cn.execute("UPDATE messages SET ts=? WHERE question='pregunta de diciembre'",
+                   (calendar.timegm((2026, 12, 2, 15, 0, 0)),))
+    c = _client()
+    assert c.get("/api/sites/rep/report?mes=2026-11").status_code == 401
+    h = {"X-Admin-Token": "clave"}
+    assert c.get("/api/sites/rep/report?mes=2026-13", headers=h).status_code == 400
+    assert c.get("/api/sites/nada/report?mes=2026-11", headers=h).status_code == 404
+    r = c.get("/api/sites/rep/report?mes=2026-11", headers=h)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert 'filename="sabio-rep-2026-11.csv"' in r.headers["content-disposition"]
+    body = r.content.decode("utf-8")
+    assert body.startswith(chr(0xFEFF))  # BOM para Excel
+    lineas = body.lstrip(chr(0xFEFF)).splitlines()
+    assert lineas[0] == "Reporte SABIO;Tienda Rep;2026-11"
+    assert "Consultas totales;4" in lineas and "% resueltas;25,0%" in lineas and "% útiles;100,0%" in lineas
+    sin = lineas.index("Top 10 preguntas sin respuesta;Veces")
+    assert lineas[sin + 1] == "¿abren los lunes?;2"
+    fuera = lineas.index("Top 10 preguntas fuera de tema;Veces")
+    assert lineas[fuera + 1] == "receta de pizza;1"
+    assert "pregunta interna" not in body and "diciembre" not in body

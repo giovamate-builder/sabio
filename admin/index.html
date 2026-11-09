@@ -80,7 +80,8 @@
       <h2>Preguntas fuera de tema</h2>
       <p class="mu">Consultas que no tienen que ver con el rubro del sitio. El asistente las rechaza.</p>
       <ul id="offtopic"></ul>
-      <p></p><button class="sec" id="recrawl">Volver a rastrear</button><button class="danger" id="delete">Eliminar sitio</button>
+      <p></p><button class="sec" id="recrawl">Volver a rastrear</button>
+      <span class="mu" style="margin-left:10px"><input type="month" id="mes" aria-label="Mes del reporte"> <button class="sec" id="report">Descargar reporte</button></span><button class="danger" id="delete">Eliminar sitio</button>
     </section>
     <section class="card">
       <h2>Probar el asistente</h2>
@@ -138,8 +139,11 @@ async function loadDetail() {
   $('#dinfo').textContent = s.status === 'listo' || ci.parcial ? `${s.pages||0} páginas leídas (${ci.renderizadas||0} renderizadas con navegador) · ${s.products||0} productos` : '';
   $('#snippet').textContent = `<script src="${location.origin}/widget.js" data-site="${s.id}" defer><\/script>`;
   const rate = st.tasa_resolucion == null ? '-' : Math.round(st.tasa_resolucion * 100) + '%';
+  const ut = st.utiles || {};
+  const useful = ut.porcentaje == null ? '-' : Math.round(ut.porcentaje) + '%';
   $('#kpi').innerHTML = `<div><b>${st.total}</b><span>consultas</span></div><div><b>${rate}</b><span>resueltas</span></div>
-    <div><b>${(st.por_estado.fuera_de_alcance||0)}</b><span>fuera de tema</span></div>`;
+    <div><b>${(st.por_estado.fuera_de_alcance||0)}</b><span>fuera de tema</span></div>
+    <div><b>${useful}</b><span>útiles (${ut.votos || 0} votos 👍/👎)</span></div>`;
   const u = st.uso || {};
   if (document.activeElement !== $('#plan')) $('#plan').value = u.plan || 'emprendedor';
   $('#usotxt').textContent = u.limite ? ` · ${u.conversaciones_mes.toLocaleString('es-AR')} de ${u.limite.toLocaleString('es-AR')} conversaciones este mes (${u.porcentaje.toLocaleString('es-AR')}%)` : '';
@@ -157,6 +161,20 @@ $('#f').onsubmit = async e => {
   current = r.id; $('#url').value=''; refresh();
 };
 $('#recrawl').onclick = async () => { await api(`/api/sites/${current}/recrawl`, {method:'POST'}); refresh(); };
+// Mes actual en hora de Argentina (UTC-3), igual que el servidor
+$('#mes').value = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
+$('#report').onclick = async () => {
+  const mes = $('#mes').value;
+  let r;
+  try { r = await fetch(`/api/sites/${current}/report?mes=${encodeURIComponent(mes)}`, {headers: {'X-Admin-Token': tok()}}); }
+  catch (e) { alert('No se pudo conectar con el servidor.'); return; }
+  if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || `Error ${r.status}`); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob());
+  a.download = `sabio-${current}-${mes}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
 $('#plan').onchange = async () => {
   if (await api(`/api/sites/${current}/plan`, {method:'PUT', headers:{'Content-Type':'application/json'},
                 body: JSON.stringify({plan: $('#plan').value})})) loadDetail();

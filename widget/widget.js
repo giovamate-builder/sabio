@@ -41,6 +41,11 @@
     '.src{display:block;margin-top:6px;font-size:12px}' +
     '.src a{color:' + COLOR + ';text-decoration:none}' +
     '.typing{opacity:.6;font-style:italic}' +
+    '.vote{display:flex;gap:4px;margin-top:6px;align-items:center;font-size:12px;color:#8a90a0}' +
+    '.vote button{border:1px solid #e3e6ee;background:#fff;border-radius:12px;padding:1px 8px;cursor:pointer;font-size:13px;line-height:1.6}' +
+    '.vote button:hover{border-color:' + COLOR + '}' +
+    '.vote button:disabled{cursor:default;opacity:.45}' +
+    '.vote button.on{opacity:1;border-color:' + COLOR + '}' +
     'form{display:flex;border-top:1px solid #e3e6ee;padding:8px;gap:6px;background:#fff}' +
     'input{flex:1;border:1px solid #d5d9e3;border-radius:20px;padding:9px 14px;font-size:14px;outline:none}' +
     'input:focus{border-color:' + COLOR + '}' +
@@ -59,7 +64,7 @@
   var form = root.querySelector('form');
   var input = root.querySelector('input');
 
-  function bubble(role, text, sources) {
+  function bubble(role, text, sources, msg) {
     var d = document.createElement('div');
     d.className = 'm ' + (role === 'user' ? 'u' : 'b');
     d.textContent = text;
@@ -68,15 +73,43 @@
       a.href = s.url; a.target = '_top'; a.textContent = '↗ ' + (s.titulo || s.url);
       var w = document.createElement('span'); w.className = 'src'; w.appendChild(a); d.appendChild(w);
     });
+    if (msg && msg.id) d.appendChild(voteBar(msg));
     msgs.appendChild(d);
     msgs.scrollTop = msgs.scrollHeight;
     return d;
   }
 
+  // Botones 👍/👎: un voto por respuesta, se recuerda en la sesión del navegador
+  function voteBar(msg) {
+    var bar = document.createElement('div'); bar.className = 'vote';
+    var label = document.createElement('span');
+    var up = document.createElement('button'), down = document.createElement('button');
+    up.textContent = '👍'; up.setAttribute('aria-label', 'Me sirvió');
+    down.textContent = '👎'; down.setAttribute('aria-label', 'No me sirvió');
+    function show() {
+      var voted = msg.vote === 1 || msg.vote === -1;
+      up.disabled = down.disabled = voted;
+      up.className = msg.vote === 1 ? 'on' : ''; down.className = msg.vote === -1 ? 'on' : '';
+      label.textContent = voted ? '¡Gracias!' : '¿Te sirvió?';
+    }
+    function vote(v) {
+      msg.vote = v; save(state); show();
+      fetch(API + '/api/feedback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: SITE, message_id: msg.id, valor: v, session: state.session })
+      }).catch(function () {});
+    }
+    up.onclick = function () { vote(1); };
+    down.onclick = function () { vote(-1); };
+    bar.appendChild(label); bar.appendChild(up); bar.appendChild(down);
+    show();
+    return bar;
+  }
+
   function render() {
     msgs.innerHTML = '';
     if (!state.history.length) bubble('assistant', '¡Hola! ¿En qué te puedo ayudar? Podés preguntarme por productos, precios, stock o envíos.');
-    state.history.forEach(function (h) { bubble(h.role, h.content, h.sources); });
+    state.history.forEach(function (h) { bubble(h.role, h.content, h.sources, h); });
   }
 
   function toggle(open) {
@@ -102,9 +135,10 @@
       body: JSON.stringify({ site_id: SITE, message: q, session: state.session, history: past })
     }).then(function (r) { return r.json(); }).then(function (d) {
       t.remove();
-      var msg = { role: 'assistant', content: d.respuesta || 'No pude responder ahora.', sources: d.fuentes || [] };
+      var msg = { role: 'assistant', content: d.respuesta || 'No pude responder ahora.', sources: d.fuentes || [],
+                  id: d.message_id || null };
       state.history.push(msg); save(state);
-      bubble('assistant', msg.content, msg.sources);
+      bubble('assistant', msg.content, msg.sources, msg);
     }).catch(function () {
       t.remove(); bubble('assistant', 'Hubo un problema de conexión. Probá de nuevo en un momento.');
     });
