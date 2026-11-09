@@ -117,16 +117,22 @@ def log_message(site_id: str, session: str, q: str, a: str, status: str, sources
                   (site_id, session, q, a, status, json.dumps(sources), time.time()))
 
 
+# Sesiones internas: la página /presentacion, la evaluación automática y las verificaciones manuales.
+# Se guardan igual (trazabilidad), pero no cuentan en las métricas del dueño del sitio.
+INTERNAL_SESSIONS = ("presentacion", "eval", "verificacion")
+
+
 def stats(site_id: str) -> dict:
+    real = f"site_id=? AND session NOT IN ({','.join('?' * len(INTERNAL_SESSIONS))})"
+    args = (site_id, *INTERNAL_SESSIONS)
     with conn() as c:
-        rows = c.execute("SELECT status, COUNT(*) n FROM messages WHERE site_id=? GROUP BY status",
-                         (site_id,)).fetchall()
-        unanswered = c.execute("SELECT question, COUNT(*) n FROM messages WHERE site_id=? AND status='sin_info' GROUP BY question ORDER BY n DESC LIMIT 20",
-                               (site_id,)).fetchall()
-        off_topic = c.execute("SELECT question, COUNT(*) n FROM messages WHERE site_id=? AND status='fuera_de_alcance' "
-                              "GROUP BY question ORDER BY n DESC LIMIT 20", (site_id,)).fetchall()
-        recent =c.execute("SELECT question, answer, status, ts FROM messages WHERE site_id=? "
-                           "ORDER BY ts DESC LIMIT 30", (site_id,)).fetchall()
+        rows = c.execute(f"SELECT status, COUNT(*) n FROM messages WHERE {real} GROUP BY status", args).fetchall()
+        unanswered = c.execute(f"SELECT question, COUNT(*) n FROM messages WHERE {real} AND status='sin_info' "
+                               "GROUP BY question ORDER BY n DESC LIMIT 20", args).fetchall()
+        off_topic = c.execute(f"SELECT question, COUNT(*) n FROM messages WHERE {real} AND status='fuera_de_alcance' "
+                              "GROUP BY question ORDER BY n DESC LIMIT 20", args).fetchall()
+        recent = c.execute(f"SELECT question, answer, status, ts FROM messages WHERE {real} "
+                           "ORDER BY ts DESC LIMIT 30", args).fetchall()
     by = {r["status"]: r["n"] for r in rows}
     total = sum(by.values())
     return {"total": total, "por_estado": by,

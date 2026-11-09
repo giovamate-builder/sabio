@@ -192,6 +192,21 @@ async def chat(body: ChatIn):
     return ans.to_dict()
 
 
+@app.get("/api/eval")
+def eval_summary():
+    """Resumen de la última evaluación (eval/resultados.json), para las tarjetas de /presentacion."""
+    import json
+    f = ROOT / "eval" / "resultados.json"
+    if not f.is_file():
+        raise HTTPException(404, "Todavía no hay resultados de evaluación")
+    return json.loads(f.read_text(encoding="utf-8")).get("resumen", {})
+
+
+@app.get("/presentacion")
+def presentacion():
+    return FileResponse(ROOT / "admin" / "presentacion.html")
+
+
 @app.get("/api/health")
 def health():
     from . import semantic

@@ -749,3 +749,41 @@ def test_fuentes_siempre_con_url_absoluta(q):
     sid = _demo_tecnosur()
     a = run(engine.answer(sid, q))
     assert a.sources and all(s["url"].startswith("https://sabio.example.com/demo/tecnosur/") for s in a.sources)
+
+
+# ---------------------------------------------------------------- Bloque 4: página /presentacion
+
+def test_api_eval_devuelve_solo_el_resumen():
+    r = _client().get("/api/eval")
+    esperado = json.loads((ROOT / "eval" / "resultados.json").read_text(encoding="utf-8"))["resumen"]
+    assert r.status_code == 200 and r.json() == esperado
+    assert {"precision", "rechazo_correcto", "respuestas_inventadas", "latencia_p50_ms"} <= set(r.json())
+
+
+def test_api_eval_sin_resultados(monkeypatch, tmp_path):
+    from app import main
+    monkeypatch.setattr(main, "ROOT", tmp_path)
+    assert _client().get("/api/eval").status_code == 404
+
+
+def test_pagina_de_presentacion():
+    r = _client().get("/presentacion")
+    html = r.text
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    for q in ["¿Tienen auriculares bluetooth en stock?", "¿Qué medios de pago aceptan?",
+              "Pasame la receta de la chocotorta", "¿Qué venden?", "¿Abren los lunes?", "¿Quién ganó el mundial?"]:
+        assert q in html
+    assert 'data-site="demo-tecnosur"' in html and 'data-site="demo-dulcepilar"' in html
+    assert "session: 'presentacion'" in html and "/api/eval" in html and "AbortController" in html
+    assert 'href="/presentacion"' in (ROOT / "admin" / "inicio.html").read_text(encoding="utf-8")
+    assert 'href="/presentacion"' in (ROOT / "admin" / "index.html").read_text(encoding="utf-8")
+
+
+def test_sesiones_internas_no_cuentan_en_las_metricas():
+    store.init()
+    store.create_site("t6", "https://x.com")
+    store.log_message("t6", "visitante", "¿hacen envíos?", "-", "respondida", [])
+    for s in ("presentacion", "eval", "verificacion"):
+        store.log_message("t6", s, f"pregunta de {s}", "-", "sin_info", [])
+    st = store.stats("t6")
+    assert st["total"] == 1 and st["sin_respuesta"] == [] and len(st["recientes"]) == 1
