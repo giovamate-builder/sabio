@@ -3,7 +3,10 @@ WORKDIR /app
 # Chromium de Playwright para leer sitios hechos con JavaScript (ver SABIO_RENDER_JS en README.md)
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+# libatomic1: el programa interno de Playwright (desde la 1.65) la necesita para arrancar, y la imagen
+# slim no la trae; sin ella "playwright install" falla antes de poder instalar sus propias dependencias
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 \
+    && pip install --no-cache-dir -r requirements.txt \
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
