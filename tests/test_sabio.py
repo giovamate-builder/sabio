@@ -527,6 +527,7 @@ def test_rastreo_cortado_sin_contenido_queda_en_error(monkeypatch):
 def test_un_solo_rastreo_a_la_vez(monkeypatch):
     from app import ingest, main
     monkeypatch.setattr(main, "ADMIN_TOKEN", "")
+    monkeypatch.setenv("SABIO_ENV", "dev")  # sin clave, el panel solo se habilita en desarrollo (Bloque 2)
     monkeypatch.setenv("SABIO_ALLOW_PRIVATE", "1")
     store.init()
     store.create_site("ocupado", "https://ocupado.com")
@@ -598,3 +599,70 @@ def test_pagina_gigante_no_llena_la_memoria(monkeypatch):
     _mock_web(monkeypatch, handler)
     pages = run(crawl("https://enorme.com", max_pages=1))
     assert len(pages) == 1 and 0 < len(pages[0].text) <= MAX_PAGE_TEXT
+
+
+# ---------------------------------------------------------------- Bloque 2: seguridad del panel
+
+PROTEGIDOS = [("get", "/api/sites", None), ("get", "/api/sites/t1", None), ("get", "/api/sites/t1/stats", None),
+              ("post", "/api/sites", {"url": "https://acceso.com"}), ("post", "/api/sites/t1/recrawl", None),
+              ("delete", "/api/sites/borrable", None)]
+
+
+@pytest.fixture
+def api_sin_rastreo(monkeypatch):
+    """Cliente de la API con los rastreos reemplazados por uno vacío (no sale a internet)."""
+    from app import ingest, main
+
+    async def falso(site_id, max_pages=None, reserved=False):
+        ingest.release(site_id)
+    monkeypatch.setattr(main, "ingest_site", falso)
+    monkeypatch.setenv("SABIO_ALLOW_PRIVATE", "1")
+    monkeypatch.delenv("SABIO_ENV", raising=False)
+    _site()
+    store.create_site("borrable", "https://borrable.com")
+    return _client()
+
+
+def _pedir(c, metodo, url, body, headers=None):
+    return getattr(c, metodo)(url, headers=headers or {}, **({"json": body} if body else {}))
+
+
+@pytest.mark.parametrize("metodo,url,body", PROTEGIDOS)
+def test_endpoints_del_panel_exigen_la_clave(api_sin_rastreo, monkeypatch, metodo, url, body):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave-correcta")
+    assert _pedir(api_sin_rastreo, metodo, url, body).status_code == 401
+    assert _pedir(api_sin_rastreo, metodo, url, body, {"X-Admin-Token": "otra"}).status_code == 401
+    r = _pedir(api_sin_rastreo, metodo, url, body, {"X-Admin-Token": "clave-correcta"})
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("metodo,url,body", PROTEGIDOS)
+def test_sin_clave_el_panel_queda_deshabilitado_salvo_en_dev(api_sin_rastreo, monkeypatch, metodo, url, body):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "")
+    r = _pedir(api_sin_rastreo, metodo, url, body)
+    assert r.status_code == 403 and "SABIO_ADMIN_TOKEN" in r.json()["detail"]
+    monkeypatch.setenv("SABIO_ENV", "dev")
+    assert _pedir(api_sin_rastreo, metodo, url, body).status_code == 200
+
+
+def test_la_clave_se_compara_en_tiempo_constante(api_sin_rastreo, monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave-correcta")
+    llamadas = []
+    real = main.hmac.compare_digest
+    monkeypatch.setattr(main.hmac, "compare_digest", lambda a, b: llamadas.append((a, b)) or real(a, b))
+    api_sin_rastreo.get("/api/sites", headers={"X-Admin-Token": "clave-correcta"})
+    assert llamadas == [(b"clave-correcta", b"clave-correcta")]
+
+
+def test_el_widget_sigue_funcionando_sin_clave(api_sin_rastreo, monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave-correcta")
+    r = api_sin_rastreo.post("/api/chat", json={"site_id": "t1", "message": "¿tienen stock del mate imperial?"})
+    assert r.status_code == 200 and r.json()["estado"] == "respondida"
+    assert api_sin_rastreo.get("/widget.js").status_code == 200
+    assert api_sin_rastreo.get("/api/health").status_code == 200
+    widget = (ROOT / "widget" / "widget.js").read_text(encoding="utf-8")
+    assert set(__import__("re").findall(r"/api/[a-z/]+", widget)) == {"/api/chat"}  # el widget solo usa el chat

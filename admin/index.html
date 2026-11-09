@@ -84,25 +84,33 @@
 </main>
 <script>
 const $ = s => document.querySelector(s);
-let current = null, history = [];
+let current = null, history = [], lastError = '', lastStatus = 0, asked = false;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const qlist = l => l.length ? l.map(u => `<li>${esc(u.question)} <span class="mu">(${u.n})</span></li>`).join('') : '<li class="mu">Todavía no hay.</li>';
 function tok() { try { return localStorage.getItem('sabio_admin') || ''; } catch (e) { return ''; } }
 async function api(p, o, quiet) {
   o = o || {}; o.headers = Object.assign({}, o.headers || {}, {'X-Admin-Token': tok()});
-  let r = await fetch(p, o);
-  if (r.status === 401) {
+  let r;
+  try { r = await fetch(p, o); }
+  catch (e) { lastStatus = 0; lastError = 'No se pudo conectar con el servidor. Reintentando…'; if (!quiet) alert(lastError); return null; }
+  if (r.status === 401 && !asked) {  // se pregunta una vez; si falla, se ofrece reintentar
+    asked = true;
     const t = prompt('Clave de administración'); try { localStorage.setItem('sabio_admin', t || ''); } catch (e) {}
     o.headers['X-Admin-Token'] = t || ''; r = await fetch(p, o);
   }
   const data = await r.json().catch(() => ({}));
+  lastStatus = r.status; lastError = r.ok ? '' : (data.detail || `Error ${r.status}`);
   // 409 (ya hay un rastreo en curso), 403, 404…: se muestra el motivo en lugar de fallar en silencio
   if (!r.ok) { if (!quiet) alert(data.detail || `Error ${r.status}`); return null; }
   return data;
 }
 async function refresh() {
   const sites = await api('/api/sites', null, true);  // se actualiza sola: sin alertas
-  if (!sites) return;
+  if (!sites) {
+    $('#list').innerHTML = `<tr><td colspan="5" class="mu">${esc(lastError)} ${lastStatus === 401 ? '<button class="sec" id="relogin">Ingresar clave</button>' : ''}</td></tr>`;
+    if ($('#relogin')) $('#relogin').onclick = e => { e.stopPropagation(); asked = false; refresh(); };
+    return;
+  }
   $('#list').innerHTML = sites.map(s => { const ci = s.crawl_info || {};
     return `<tr data-id="${esc(s.id)}" class="${s.id===current?'sel':''}"><td>${esc(s.name||s.url)}${ci.aviso ? ' <span title="Se leyó poco contenido">⚠️</span>' : ''}<div class="mu">${esc(s.url)}</div></td>
     <td><span class="pill ${esc(s.status)}">${esc(s.status)}</span></td><td>${s.pages||0}${ci.renderizadas ? ` <span class="mu">(${ci.renderizadas} con navegador)</span>` : ''}</td><td>${s.products||0}</td><td>${esc(s.platform||'-')}</td></tr>`; }).join('');

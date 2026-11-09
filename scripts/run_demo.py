@@ -20,7 +20,8 @@ def main():
     subprocess.run([sys.executable, str(ROOT / "scripts" / "demo_data.py")], check=True)
     for f in (ROOT / "demo_sites").rglob("*.html"):
         f.write_text(f.read_text(encoding="utf-8").replace("{{BASE}}", "/"), encoding="utf-8")
-    env = dict(os.environ, SABIO_ALLOW_PRIVATE="1")  # los sitios de ejemplo corren en localhost
+    # Los sitios de ejemplo corren en localhost; SABIO_ENV=dev habilita el panel sin clave (solo en local)
+    env = dict(os.environ, SABIO_ALLOW_PRIVATE="1", SABIO_ENV=os.environ.get("SABIO_ENV", "dev"))
     procs = [subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8000"], cwd=ROOT, env=env)]
     for name, port in SITES.items():
         procs.append(subprocess.Popen([sys.executable, "-m", "http.server", str(port)],

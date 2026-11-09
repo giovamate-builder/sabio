@@ -17,12 +17,16 @@ import unicodedata
 from pathlib import Path
 from urllib.parse import urlparse
 
+import os
+
 import httpx
 
 API = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(__file__).parent / "resultados.json"
 SET = json.loads((Path(__file__).parent / "eval_set.json").read_text(encoding="utf-8"))
 PORTS = {"tecnosur": 8101, "dulcepilar": 8102}
+# La lista de sitios es del panel: si el servidor tiene clave, se manda (SABIO_ADMIN_TOKEN)
+ADMIN = {"X-Admin-Token": os.environ["SABIO_ADMIN_TOKEN"]} if os.environ.get("SABIO_ADMIN_TOKEN") else {}
 
 
 def norm(s):
@@ -53,7 +57,10 @@ def main():
     # La base guarda los rastreos de corridas anteriores: se usa el más reciente de cada sitio
     # (la API los devuelve del más nuevo al más viejo)
     sites = {}
-    for s in httpx.get(API + "/api/sites").json():
+    r = httpx.get(API + "/api/sites", headers=ADMIN)
+    if r.status_code in (401, 403):
+        sys.exit(f"No se pudo leer la lista de sitios ({r.status_code}): {r.json().get('detail')}")
+    for s in r.json():
         sites.setdefault(s["url"], s["id"])
     lat, fails = [], []
     c = {k: [0, 0] for k in ("dentro", "dentro_coloquial", "fuera", "fuera_parecidas", "vagas")}

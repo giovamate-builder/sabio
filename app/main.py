@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 import secrets
 import time
@@ -22,9 +23,26 @@ DEMO = os.environ.get("SABIO_DEMO", "0") == "1"
 ADMIN_TOKEN = os.environ.get("SABIO_ADMIN_TOKEN", "")
 
 
+def dev_mode() -> bool:
+    return os.environ.get("SABIO_ENV", "").strip().lower() == "dev"
+
+
+NO_TOKEN = ("El panel está deshabilitado: falta configurar SABIO_ADMIN_TOKEN en el servidor "
+            "(o SABIO_ENV=dev para desarrollo local).")
+
+
 def _check_admin(token: str | None):
-    if ADMIN_TOKEN and token != ADMIN_TOKEN:
-        raise HTTPException(401, "Falta la clave de administración")
+    """Endpoints del panel (cargar, rastrear, borrar, ver sitios y conversaciones).
+
+    - Con SABIO_ADMIN_TOKEN definido, se exige el encabezado X-Admin-Token (comparación en tiempo constante).
+    - Sin token, todo el panel queda deshabilitado salvo con SABIO_ENV=dev (desarrollo local).
+    /api/chat, /widget.js y /api/health son públicos: los usa el widget en el sitio del cliente.
+    """
+    if ADMIN_TOKEN:
+        if not hmac.compare_digest((token or "").encode(), ADMIN_TOKEN.encode()):
+            raise HTTPException(401, "Falta la clave de administración o es incorrecta")
+    elif not dev_mode():
+        raise HTTPException(403, NO_TOKEN)
 _rw = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
 PUBLIC_URL = (os.environ.get("SABIO_PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL")
               or (f"https://{_rw}" if _rw else None)
@@ -39,6 +57,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.on_event("startup")
 async def _startup():
     store.init()
+    if not ADMIN_TOKEN and not dev_mode():
+        print("SABIO AVISO: SABIO_ADMIN_TOKEN no está definido. El panel y la carga de sitios quedan "
+              "deshabilitados; el widget sigue funcionando. Definí la clave (o SABIO_ENV=dev en local).")
     n = store.mark_interrupted()
     if n:
         print(f"SABIO: {n} sitio(s) quedaron con el rastreo cortado por un reinicio; se marcaron como error.")
@@ -110,12 +131,14 @@ async def create_site(body: SiteIn, bg: BackgroundTasks, x_admin_token: str | No
 
 
 @app.get("/api/sites")
-def sites():
+def sites(x_admin_token: str | None = Header(None)):
+    _check_admin(x_admin_token)
     return store.list_sites()
 
 
 @app.get("/api/sites/{site_id}")
-def site(site_id: str):
+def site(site_id: str, x_admin_token: str | None = Header(None)):
+    _check_admin(x_admin_token)
     s = store.get_site(site_id)
     if not s:
         raise HTTPException(404, "Sitio no encontrado")
@@ -148,7 +171,8 @@ def delete_site(site_id: str, x_admin_token: str | None = Header(None)):
 
 
 @app.get("/api/sites/{site_id}/stats")
-def stats(site_id: str):
+def stats(site_id: str, x_admin_token: str | None = Header(None)):
+    _check_admin(x_admin_token)
     return store.stats(site_id)
 
 

@@ -5,6 +5,9 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SABIO_DEMO=1
+      # Uso local: sin clave el panel queda abierto. Para probar como en producción, definí SABIO_ADMIN_TOKEN.
+      - SABIO_ENV=${SABIO_ENV:-dev}
+      - SABIO_ADMIN_TOKEN=${SABIO_ADMIN_TOKEN:-}
     volumes: ["sabio-data:/data"]
 volumes:
   sabio-data:
