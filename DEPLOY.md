@@ -103,7 +103,8 @@ npx cloudflared tunnel --url http://localhost:8000
    - **Shopify:** Tienda online › Temas › Editar código › `theme.liquid`, antes de `</body>`.
    - **Wix:** Configuración › Código personalizado, en el pie del cuerpo.
 
-Opcionales en la misma línea: `data-color="#c2410c"`, `data-title="Asistente de Mi Tienda"`, `data-position="left"`.
+Opcionales en la misma línea: `data-color="#c2410c"`, `data-nombre="Asistente de Mi Tienda"`,
+`data-bienvenida="¡Hola! ¿En qué te ayudo?"`, `data-posicion="izquierda"` (ver la tabla en el README).
 
 ## Guion para mostrarlo en clase (5 minutos)
 

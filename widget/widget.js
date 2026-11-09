@@ -1,15 +1,31 @@
 /* SABIO widget: se instala con
  *   <script src="https://TU-SERVIDOR/widget.js" data-site="ID_DEL_SITIO" defer></script>
- * Opcionales: data-color="#2f5bea" data-title="Asistente" data-position="right|left"
+ * Opcionales (sin ellos se ve como siempre):
+ *   data-color="#2f5bea"                       color principal
+ *   data-nombre="Asistente de Mi Tienda"       título del chat (también data-title)
+ *   data-bienvenida="¡Hola! ¿Qué estás buscando?" primer mensaje
+ *   data-posicion="izquierda|derecha"          lado de la pantalla (también data-position="left|right")
  */
 (function () {
   var script = document.currentScript || document.querySelector('script[data-site]');
   if (!script) return;
+  function attr(names) {
+    for (var i = 0; i < names.length; i++) {
+      var v = script.getAttribute(names[i]);
+      if (v && v.trim()) return v.trim();
+    }
+    return null;
+  }
   var SITE = script.getAttribute('data-site');
   var API = new URL(script.src).origin;
-  var COLOR = script.getAttribute('data-color') || '#2f5bea';
-  var TITLE = script.getAttribute('data-title') || 'Asistente';
-  var POS = script.getAttribute('data-position') === 'left' ? 'left' : 'right';
+  // El color va dentro del CSS: solo se aceptan valores de color, para que un valor raro no rompa el estilo
+  var rawColor = attr(['data-color']);
+  var COLOR = rawColor && /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20}|(rgb|hsl)a?\([0-9.,%\s]+\))$/.test(rawColor) ? rawColor : '#2f5bea';
+  var TITLE = attr(['data-nombre', 'data-title']) || 'Asistente';
+  var WELCOME = attr(['data-bienvenida']) ||
+    '¡Hola! ¿En qué te puedo ayudar? Podés preguntarme por productos, precios, stock o envíos.';
+  var side = (attr(['data-posicion', 'data-position']) || '').toLowerCase();
+  var POS = side === 'izquierda' || side === 'left' ? 'left' : 'right';
   var KEY = 'sabio_' + SITE;
 
   function load() { try { return JSON.parse(sessionStorage.getItem(KEY)) || null; } catch (e) { return null; } }
@@ -41,6 +57,9 @@
     '.src{display:block;margin-top:6px;font-size:12px}' +
     '.src a{color:' + COLOR + ';text-decoration:none}' +
     '.typing{opacity:.6;font-style:italic}' +
+    '.wa{display:inline-flex;align-items:center;gap:6px;margin-top:8px;background:#25d366;color:#fff;text-decoration:none;' +
+    'border-radius:16px;padding:6px 12px;font-size:13px;font-weight:600}' +
+    '.wa:hover{background:#1ebe5a}' +
     '.vote{display:flex;gap:4px;margin-top:6px;align-items:center;font-size:12px;color:#8a90a0}' +
     '.vote button{border:1px solid #e3e6ee;background:#fff;border-radius:12px;padding:1px 8px;cursor:pointer;font-size:13px;line-height:1.6}' +
     '.vote button:hover{border-color:' + COLOR + '}' +
@@ -52,13 +71,14 @@
     'button.send{border:0;background:' + COLOR + ';color:#fff;border-radius:20px;padding:0 14px;cursor:pointer;font-size:14px}' +
     '.foot{font-size:10px;color:#8a90a0;text-align:center;padding:0 0 6px;background:#fff}' +
     '</style>' +
-    '<div class="panel" part="panel"><div class="head"><div>' + TITLE + '<small>Respondo con la información de este sitio</small></div>' +
+    '<div class="panel" part="panel"><div class="head"><div><span class="title"></span><small>Respondo con la información de este sitio</small></div>' +
     '<button class="x" aria-label="Cerrar">×</button></div>' +
     '<div class="msgs" aria-live="polite"></div>' +
     '<form><input placeholder="Escribí tu consulta…" aria-label="Consulta" maxlength="500"/><button class="send" type="submit">Enviar</button></form>' +
     '<div class="foot">Funciona con SABIO</div></div>' +
     '<button class="btn" aria-label="Abrir asistente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>';
 
+  root.querySelector('.title').textContent = TITLE;  // texto, no HTML
   var panel = root.querySelector('.panel');
   var msgs = root.querySelector('.msgs');
   var form = root.querySelector('form');
@@ -73,6 +93,13 @@
       a.href = s.url; a.target = '_top'; a.textContent = '↗ ' + (s.titulo || s.url);
       var w = document.createElement('span'); w.className = 'src'; w.appendChild(a); d.appendChild(w);
     });
+    // Sin información o fuera de tema: botón para seguir la consulta por WhatsApp con el negocio
+    if (msg && msg.whatsapp && /^https:\/\/wa\.me\/\d+$/.test(msg.whatsapp)) {
+      var wa = document.createElement('a');
+      wa.className = 'wa'; wa.href = msg.whatsapp; wa.target = '_blank'; wa.rel = 'noopener';
+      wa.textContent = 'Hablar por WhatsApp';
+      d.appendChild(wa);
+    }
     if (msg && msg.id) d.appendChild(voteBar(msg));
     msgs.appendChild(d);
     msgs.scrollTop = msgs.scrollHeight;
@@ -108,7 +135,7 @@
 
   function render() {
     msgs.innerHTML = '';
-    if (!state.history.length) bubble('assistant', '¡Hola! ¿En qué te puedo ayudar? Podés preguntarme por productos, precios, stock o envíos.');
+    if (!state.history.length) bubble('assistant', WELCOME);
     state.history.forEach(function (h) { bubble(h.role, h.content, h.sources, h); });
   }
 
@@ -136,7 +163,7 @@
     }).then(function (r) { return r.json(); }).then(function (d) {
       t.remove();
       var msg = { role: 'assistant', content: d.respuesta || 'No pude responder ahora.', sources: d.fuentes || [],
-                  id: d.message_id || null };
+                  id: d.message_id || null, whatsapp: d.whatsapp || null };
       state.history.push(msg); save(state);
       bubble('assistant', msg.content, msg.sources, msg);
     }).catch(function () {

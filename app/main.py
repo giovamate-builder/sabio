@@ -209,11 +209,19 @@ async def chat(body: ChatIn):
         if store.plan_status(body.site_id, s.get("plan"))["estado"] == "limite":
             text = "En este momento el asistente no está disponible. " + engine.contact_line(s)
             mid = store.log_message(body.site_id, session, body.message, text, "limite", [])
-            return {"respuesta": text, "estado": "limite", "fuentes": [], "message_id": mid}
+            return _with_handoff(s, {"respuesta": text, "estado": "limite", "fuentes": [], "message_id": mid})
     ans = await engine.answer(body.site_id, body.message, body.history)
     mid = store.log_message(body.site_id, session, body.message, ans.text, ans.status,
                             [x["url"] for x in ans.sources])
-    return {**ans.to_dict(), "message_id": mid}
+    return _with_handoff(s, {**ans.to_dict(), "message_id": mid})
+
+
+def _with_handoff(site: dict, resp: dict) -> dict:
+    """Si el asistente no pudo responder y el negocio publica WhatsApp, el widget muestra un botón para derivar."""
+    link = engine.whatsapp_link(site) if resp["estado"] in engine.HANDOFF_STATUSES else None
+    if link:
+        resp["whatsapp"] = link
+    return resp
 
 
 class FeedbackIn(BaseModel):

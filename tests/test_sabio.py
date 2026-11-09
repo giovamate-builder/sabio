@@ -987,3 +987,40 @@ def test_reporte_mensual_csv(monkeypatch):
     fuera = lineas.index("Top 10 preguntas fuera de tema;Veces")
     assert lineas[fuera + 1] == "receta de pizza;1"
     assert "pregunta interna" not in body and "diciembre" not in body
+
+
+# ---------------------------------------------------------------- Bloque 7: widget personalizable y derivación
+
+def _sitio_con_whatsapp():
+    _site()
+    prof = dict(store.get_site("t1")["profile"])
+    prof["contacto"] = dict(prof["contacto"], whatsapp=["5491112345678"])
+    store.create_site("wa", "https://materiasur.com")
+    store.replace_chunks("wa", store.get_chunks("t1"))
+    store.update_site("wa", status="listo", profile=prof, crawled_at=3.0, plan="pro")
+
+
+@pytest.mark.parametrize("q,estado", [("¿el mate imperial viene con bombilla de oro?", "sin_info"),
+                                      ("¿cuál es la capital de Francia?", "fuera_de_alcance")])
+def test_sin_respuesta_ofrece_whatsapp(q, estado):
+    _sitio_con_whatsapp()
+    r = _client().post("/api/chat", json={"site_id": "wa", "message": q, "session": "w1"}).json()
+    assert r["estado"] == estado and r["whatsapp"] == "https://wa.me/5491112345678"
+
+
+def test_whatsapp_solo_cuando_hace_falta_y_existe():
+    _sitio_con_whatsapp()
+    c = _client()
+    r = c.post("/api/chat", json={"site_id": "wa", "message": "¿tienen stock del mate imperial?"}).json()
+    assert r["estado"] == "respondida" and "whatsapp" not in r
+    r = c.post("/api/chat", json={"site_id": "t1", "message": "¿cuál es la capital de Francia?"}).json()
+    assert r["estado"] == "fuera_de_alcance" and "whatsapp" not in r  # t1 no publica WhatsApp
+
+
+def test_widget_personalizable_y_seguro():
+    w = (ROOT / "widget" / "widget.js").read_text(encoding="utf-8")
+    for a in ("data-color", "data-nombre", "data-bienvenida", "data-posicion", "izquierda",
+              "data-title", "data-position"):  # nuevos y los de antes, que siguen funcionando
+        assert a in w
+    assert "' + TITLE + '" not in w and ".textContent = TITLE" in w  # el nombre se muestra como texto, no HTML
+    assert "Hablar por WhatsApp" in w and "wa\.me" in w             # solo enlaces https://wa.me/

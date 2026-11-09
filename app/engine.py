@@ -453,3 +453,13 @@ def forget(site_id: str):
 def contact_line(site) -> str:
     """Contacto del negocio (lo usa la API cuando se alcanza el límite del plan)."""
     return _contact_line(site)
+
+
+HANDOFF_STATUSES = ("sin_info", "fuera_de_alcance", "limite")
+
+
+def whatsapp_link(site) -> str | None:
+    """Enlace de WhatsApp del negocio (si el sitio publica uno), para derivar la consulta."""
+    numbers = ((site.get("profile") or {}).get("contacto") or {}).get("whatsapp") or []
+    digits = re.sub(r"\D", "", str(numbers[0])) if numbers else ""
+    return f"https://wa.me/{digits}" if digits else None

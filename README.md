@@ -125,6 +125,27 @@ La respuesta trae el `id` del sitio. En el sitio se pega, antes de `</body>`:
 <script src="https://TU-SERVIDOR/widget.js" data-site="ID_DEL_SITIO" data-color="#2f5bea" defer></script>
 ```
 
+### Personalizar el widget
+
+Todos los atributos son opcionales; sin ellos el widget se ve como siempre.
+
+| Atributo | Ejemplo | Para qué |
+|---|---|---|
+| `data-color` | `data-color="#c2410c"` | Color principal (botón, encabezado, burbujas). Acepta `#hex`, nombres de color, `rgb()` y `hsl()`; otro valor se ignora |
+| `data-nombre` | `data-nombre="Asistente de Dulce Pilar"` | Título del chat (antes `data-title`, que sigue funcionando) |
+| `data-bienvenida` | `data-bienvenida="¡Hola! ¿Qué torta estás buscando?"` | Primer mensaje del chat |
+| `data-posicion` | `data-posicion="izquierda"` | `izquierda` o `derecha` (por defecto). También acepta `data-position="left"` |
+
+```html
+<script src="https://TU-SERVIDOR/widget.js" data-site="ID_DEL_SITIO" data-color="#c2410c"
+        data-nombre="Asistente de Dulce Pilar" data-bienvenida="¡Hola! ¿Qué torta estás buscando?"
+        data-posicion="izquierda" defer></script>
+```
+
+Debajo de cada respuesta aparecen los botones 👍/👎. Cuando el asistente no tiene la información, la
+pregunta es de otro tema o se alcanzó el límite del plan, y el sitio publica un WhatsApp, aparece además
+el botón **Hablar por WhatsApp** para seguir la consulta con el negocio.
+
 Con Docker: `docker compose up --build`.
 
 ## API
