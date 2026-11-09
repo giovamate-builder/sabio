@@ -2,27 +2,22 @@
   "resumen": {
     "modo": "extractivo",
     "preguntas_dentro_de_tema": 37,
-    "precision": 0.919,
+    "precision": 0.946,
     "preguntas_coloquiales": 32,
     "precision_coloquial": 0.906,
-    "preguntas_fuera_de_tema": 31,
+    "preguntas_negocio": 7,
+    "precision_negocio": 1.0,
+    "preguntas_fuera_de_tema": 33,
     "rechazo_correcto": 1.0,
     "rechazo_correcto_parecidas": 1.0,
     "respuestas_inventadas": 0,
     "vagas_atendidas": 1.0,
     "latencia_p50_ms": 19,
-    "latencia_p95_ms": 39,
-    "latencia_max_ms": 53,
-    "memoria_servidor_mb": 70
+    "latencia_p95_ms": 36,
+    "latencia_max_ms": 44,
+    "memoria_servidor_mb": 72
   },
   "fallas": [
-    [
-      "dentro",
-      "tecnosur",
-      "me lo mandan a Mendoza?",
-      "sin_info",
-      "No tengo esa información en TecnoSur. Podés comunicarte con el equipo por WhatsApp: https://wa.me/5492304551234, correo "
-    ],
     [
       "dentro",
       "tecnosur",

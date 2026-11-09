@@ -6,16 +6,20 @@
 2. Entrá a https://render.com con tu cuenta de GitHub.
 3. **New › Blueprint** y elegí el repositorio. Render lee el archivo `render.yaml` y arma todo solo.
 4. Tocá **Deploy**. Cuando termine, te da una dirección del tipo `https://sabio-xxxx.onrender.com`.
-5. Abrí esa dirección: aparece la página de inicio con las dos tiendas de ejemplo y el panel.
+5. Abrí esa dirección: aparece la página de inicio con las dos tiendas de ejemplo, el panel y
+   `/presentacion` para mostrarlo en clase.
 
-Variables opcionales (en Render: el servicio › Environment):
+Variables (en Render: el servicio › Environment). `render.yaml` ya fija `SABIO_DEMO`, `SABIO_DB`,
+`SABIO_MAX_PAGES=60`, `SABIO_CRAWL_TIMEOUT_S=180` y `SABIO_RENDER_JS=off`, y pide las que llevan `sync: false`:
 
 | Variable | Para qué |
 |---|---|
-| `ANTHROPIC_API_KEY` | Activa las respuestas redactadas por Claude. Sin esto funciona igual, en modo extractivo. |
-| `SABIO_ADMIN_TOKEN` | Clave para que nadie más pueda cargar sitios desde el panel. Recomendado si compartís el link. |
+| `SABIO_ADMIN_TOKEN` | **Obligatoria para usar el panel.** Sin ella, el panel y la carga de sitios quedan deshabilitados (el widget y `/presentacion` siguen funcionando). |
+| `SABIO_CONTACTO` | Correo para pedidos de baja o de acceso a los datos, que aparece en `/privacidad` y `/terminos`. |
+| `ANTHROPIC_API_KEY` | Opcional. Activa las respuestas redactadas por Claude. Sin esto funciona igual, en modo extractivo. |
+| `VOYAGE_API_KEY` | Opcional. Activa la búsqueda semántica con Voyage AI (ver abajo). Sin esto, SABIO busca por palabras, sinónimos y errores de tipeo. |
+| `SABIO_RETENCION_DIAS` | Opcional. Días que se guardan las conversaciones (365 por defecto). |
 | `SABIO_RENDER_JS` | `off` en el plan gratuito; `auto` con 2 GB o más (ver abajo). |
-| `VOYAGE_API_KEY` | Activa la búsqueda semántica con Voyage AI (ver abajo). Sin esto, SABIO busca por palabras, sinónimos y errores de tipeo. |
 
 ### Sitios hechos con JavaScript y memoria
 

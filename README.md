@@ -74,10 +74,19 @@ Equipo: Giovanni Matellini Delannoy (director), Joaquín Policaro, Rafael Irraz�
      y devolver `[SIN_INFO]` si no alcanza. Sin clave funciona en modo extractivo. (Las llamadas ya no
      mandan `temperature`: desde el 21/10/2026 la API la rechaza en todos los modelos.)
    - Cada respuesta lleva el enlace a la página de donde salió.
-4. **Panel** (`/admin`): alta de sitios, línea de instalación, métricas, la lista de preguntas
-   que el sitio no responde (para que el dueño sepa qué información le falta publicar) y, aparte, las
-   preguntas fuera de tema. Si se leyó poco contenido, muestra un aviso y cuántas páginas se leyeron
-   con navegador.
+4. **Panel** (`/admin`, con la clave `SABIO_ADMIN_TOKEN`): alta, re-rastreo y eliminación de sitios,
+   línea de instalación, métricas (consultas, % resueltas, % de respuestas útiles según los 👍/👎), la lista
+   de preguntas que el sitio no responde (para que el dueño sepa qué información le falta publicar) y,
+   aparte, las preguntas fuera de tema. Muestra el plan y el uso del mes (con avisos al 80% y al 100%),
+   permite cambiar de plan y descargar un reporte mensual en CSV. Si se leyó poco contenido o el rastreo
+   se cortó, muestra el motivo.
+5. **Estabilidad** (pensada para los 512 MB del plan gratuito): como máximo `SABIO_MAX_PAGES` páginas y
+   `SABIO_CRAWL_TIMEOUT_S` segundos por rastreo (si se corta, se conserva lo leído), un solo rastreo a la vez
+   (409 si hay otro en curso), tope de 2 MB por página, y el rastreo queda dentro de la carpeta de la
+   dirección inicial. Al arrancar, los rastreos que quedaron cortados por un reinicio pasan a "error".
+6. **Planes**: emprendedor (500 conversaciones/mes), pyme (2.000) y pro (8.000). Una conversación es una
+   sesión distinta en el mes, en hora de Argentina. Al 100%, las conversaciones nuevas reciben el contacto
+   del negocio en vez del asistente.
 
 ## Probarlo en 1 minuto
 
@@ -104,12 +113,20 @@ python scripts/run_demo.py
 ## Modo demo (todo en un solo servidor)
 
 ```bash
-SABIO_DEMO=1 uvicorn app.main:app --port 8000
+SABIO_DEMO=1 SABIO_ENV=dev uvicorn app.main:app --port 8000
 ```
 
 En `http://localhost:8000` aparece una página de inicio con las dos tiendas de ejemplo
 (servidas en `/demo/tecnosur/` y `/demo/dulcepilar/`, con el widget ya instalado) y el panel.
 Es el modo que se usa al publicarlo. Para subirlo a internet, ver **DEPLOY.md**.
+
+`SABIO_ENV=dev` habilita el panel sin clave, solo para desarrollo local. En producción el panel exige
+`SABIO_ADMIN_TOKEN`; sin esa variable queda deshabilitado (el widget sigue funcionando).
+
+**Presentación en vivo:** `http://localhost:8000/presentacion` muestra las dos tiendas lado a lado, con
+botones de preguntas preparadas, una etiqueta de color por estado (respondida / sin información / fuera de
+tema), la fuente, el tiempo de cada respuesta y tarjetas con los resultados de la evaluación. Sus
+conversaciones no cuentan en las métricas del panel.
 
 ## Instalarlo en un sitio real
 
@@ -150,26 +167,57 @@ Con Docker: `docker compose up --build`.
 
 ## API
 
-| Método | Ruta | Uso |
-|---|---|---|
-| POST | `/api/sites` | Alta de un sitio `{url, platform?, creds?, allow_general?}` y rastreo en segundo plano |
-| GET | `/api/sites` / `/api/sites/{id}` | Estado, páginas, productos y perfil |
-| POST | `/api/sites/{id}/recrawl` | Volver a rastrear (además se hace solo cada 24 h) |
-| POST | `/api/chat` | `{site_id, message, history?}` → `{respuesta, estado, fuentes, modo}` |
-| GET | `/api/sites/{id}/stats` | Consultas, tasa de resolución, preguntas sin respuesta |
-| GET | `/widget.js`, `/admin` | Widget y panel |
+"Clave" = encabezado `X-Admin-Token` con el valor de `SABIO_ADMIN_TOKEN`.
+
+| Método | Ruta | Acceso | Uso |
+|---|---|---|---|
+| POST | `/api/sites` | Clave | Alta de un sitio `{url, platform?, creds?, allow_general?, max_pages?}` y rastreo en segundo plano (409 si hay otro rastreo en curso) |
+| GET | `/api/sites` / `/api/sites/{id}` | Clave | Estado, páginas, productos, perfil y plan (las credenciales nunca se devuelven) |
+| POST | `/api/sites/{id}/recrawl` | Clave | Volver a rastrear (además se hace solo cada 24 h) |
+| DELETE | `/api/sites/{id}` | Clave | Borra el sitio, sus fragmentos, conversaciones y votos (los de ejemplo: 403) |
+| PUT | `/api/sites/{id}/plan` | Clave | `{plan: emprendedor \| pyme \| pro}` |
+| GET | `/api/sites/{id}/stats` | Clave | Consultas, tasa de resolución, % útiles, preguntas sin respuesta y fuera de tema, uso del plan |
+| GET | `/api/sites/{id}/report?mes=AAAA-MM` | Clave | Reporte mensual en CSV |
+| POST | `/api/chat` | Público | `{site_id, message, session?, history?}` → `{respuesta, estado, fuentes, modo, message_id, whatsapp?}` |
+| POST | `/api/feedback` | Público | `{site_id, message_id, valor: 1 \| -1, session}`: un voto 👍/👎 por respuesta |
+| GET | `/api/eval` | Público | Resumen de la última evaluación (`eval/resultados.json`) |
+| GET | `/api/health` | Público | Estado, modo, navegador y embeddings |
+| GET | `/widget.js`, `/admin`, `/presentacion`, `/privacidad`, `/terminos` | Público | Widget, panel, presentación y páginas legales |
+
+Estados de `/api/chat`: `respondida`, `sin_info`, `fuera_de_alcance`, `charla`, `preparando` (el sitio se
+está leyendo) y `limite` (se alcanzó el límite del plan).
 
 Documentación interactiva en `http://localhost:8000/docs`.
 
 ## Pruebas y evaluación
 
 ```bash
-pytest -q                     # 43 pruebas: extracción (JSON-LD, og:, JSON embebido), sitios JavaScript con
-                              # Playwright, sinónimos/lunfardo/tipeo, no inventar, búsqueda híbrida, Voyage,
-                              # reformulación con Claude (simulada), alcance en tiendas, conectores,
-                              # seguridad y freno del rastreador, panel
+pytest -q                     # 103 pruebas: extracción, sitios JavaScript con Playwright, sinónimos/lunfardo/
+                              # tipeo, no inventar, búsqueda híbrida, alcance, conectores, límites y freno del
+                              # rastreo, acceso al panel, planes, votos, reporte, widget, páginas legales
 python eval/run_eval.py http://127.0.0.1:8000   # con la demo corriendo (python scripts/run_demo.py)
 ```
+
+Si el servidor tiene `SABIO_ADMIN_TOKEN`, `run_eval.py` la toma de la misma variable de entorno.
+
+### Mejoras finales (noviembre de 2026)
+
+Ocho bloques en la rama `mejoras-final`: estabilidad del rastreo, seguridad del panel, calidad de
+respuestas, `/presentacion`, planes, satisfacción y reporte, widget personalizable y legales. La línea de
+base está en `docs/linea-base.json`; el resultado final, en `eval/resultados.json`. El detalle de cada
+cambio está en `docs/registro-cambios.md`.
+
+| Indicador (`resumen`) | Línea de base | Final |
+|---|---|---|
+| Precisión, set original (37) | 91,9% | **94,6%** |
+| Precisión, coloquiales (32) | 90,6% | 90,6% |
+| Precisión, negocio y envíos (7, nuevas) | — | **100%** |
+| Preguntas fuera de tema | 31 | 33 (2 nuevas) |
+| Rechazo correcto / parecidas al rubro | 100% / 100% | 100% / 100% |
+| **Respuestas inventadas** | **0** | **0** |
+| Vagas atendidas | 100% | 100% |
+| Latencia mediana / p95 | 19 / 43 ms | 19 / 36 ms (otras dos corridas: 19 / 41 ms) |
+| Memoria del servidor | 70 MB | 72 MB |
 
 La prueba con Playwright se saltea si Chromium no está instalado (`python -m playwright install chromium`).
 En Windows conviene pasarle `127.0.0.1` a la evaluación: con `localhost` cada pedido tarda unos 2 s extra
@@ -183,7 +231,10 @@ en resolver el nombre.
   mal ("¿tienen auriculares Sony?", "¿tienen helado de dulce de leche?", "receta de tiramisú");
 - 5 consultas de compra vagas ("¿tenés algo para regalar?").
 
-**Antes y después** (modo extractivo, mismos sitios rastreados de cero, octubre de 2026):
+Después se sumaron 7 preguntas sobre el negocio y envíos a destinos que el sitio no nombra
+(`dentro_negocio`) y 2 fuera de tema más, con lo que el set tiene 109 preguntas.
+
+**Búsqueda híbrida, antes y después** (modo extractivo, mismos sitios rastreados de cero, octubre de 2026):
 
 | Indicador | Antes | Después (sin embeddings) | Después (embeddings locales) |
 |---|---|---|---|
@@ -196,7 +247,7 @@ en resolver el nombre.
 | Latencia mediana / p95 | 29 / 40 ms | 19 / 39 ms | 34 / 60 ms |
 | Memoria del servidor | 62 MB | 70 MB | **566 MB** |
 
-Archivos: `eval/resultados_antes_busqueda_hibrida.json`, `eval/resultados.json` (sin embeddings, la
+Archivos: `eval/resultados_antes_busqueda_hibrida.json`, `docs/linea-base.json` (sin embeddings, la
 configuración de Render) y `eval/resultados_embeddings_locales.json`. En estos sitios de ejemplo lo que
 movió los números fue la parte léxica (normalización, sinónimos, tipeo, cobertura por grupos de sinónimos
 y la regla de no contestar con un término ausente). Los embeddings locales mejoraron el orden en algunos
@@ -204,11 +255,12 @@ casos ("música sin cables" trae primero los auriculares), pero no cambiaron las
 El modo con reformulación de Claude está probado con pruebas simuladas; no se midió con la API real porque
 no tenemos clave.
 
-Fallas que quedan (todas responden "no tengo esa información", ninguna inventa): "¿me lo mandan a
-Mendoza?" (Mendoza no figura), "¿cámara web para zoom?", "¿abren los lunes?" y "¿atienden los domingos?"
-(el sitio dice "de martes a domingo", hay que deducirlo), "¿tienen garantía?" (contesta con la página
-"Quiénes somos" en lugar de "Cambios y devoluciones") y "música sin cables" (encuentra los auriculares pero
-no muestra la palabra "Bluetooth" que espera la evaluación).
+Fallas que quedan (ninguna inventa): "¿cámara web para zoom?", "¿abren los lunes?" y "¿atienden los
+domingos?" (el sitio dice "de martes a domingo", hay que deducirlo) responden "no tengo esa información";
+"¿tienen garantía?" contesta con la página "Quiénes somos" en lugar de "Cambios y devoluciones", y "música
+sin cables" encuentra los auriculares pero no muestra la palabra "Bluetooth" que espera la evaluación.
+"¿Me lo mandan a Mendoza?" se resolvió en noviembre: muestra la página de envíos aclarando que el sitio no
+menciona Mendoza.
 
 **Tiendas reales** (octubre de 2026, sin navegador ni embeddings, como en Render gratis, máximo 50 páginas).
 De 78 candidatas verificadas, la mayoría bloquea rastreadores (403, 429, captcha) o arma todo con
@@ -249,9 +301,11 @@ proyecto pesa más no inventar que contestar todo.
 ```
 app/        API, rastreador, extractor, índice, motor de respuestas, conectores
 widget/     widget.js que se pega en el sitio del cliente
-admin/      panel web
+admin/      panel, página de inicio, /presentacion, /privacidad y /terminos
+plugins/    plugin de WordPress/WooCommerce e instructivos de Tiendanube y Shopify
 scripts/    demo, generador de sitios de ejemplo, capturas
 eval/       set de evaluación y resultados
+docs/       línea de base, registro de cambios, riesgos materializados y fechas reales
 tests/      pruebas automáticas
 ```
 
@@ -266,7 +320,12 @@ tests/      pruebas automáticas
 | `SABIO_RECRAWL_HOURS` | `24` | Frecuencia de re-rastreo |
 | `SABIO_DB` | `data/sabio.db` | Base SQLite |
 | `SABIO_DEMO` | `0` | `1` sirve las tiendas de ejemplo y la página de inicio |
-| `SABIO_ADMIN_TOKEN` | (vacía) | Si se define, el panel pide esta clave para cargar sitios |
+| `SABIO_ADMIN_TOKEN` | (vacía) | Clave del panel (cargar, ver, borrar sitios y métricas). Sin ella el panel queda deshabilitado, salvo con `SABIO_ENV=dev` |
+| `SABIO_ENV` | (vacía) | `dev` habilita el panel sin clave, solo para desarrollo local |
+| `SABIO_MAX_PAGES` | `300` | Páginas máximas por rastreo (en `render.yaml`, 60) |
+| `SABIO_CRAWL_TIMEOUT_S` | `180` | Tiempo máximo de un rastreo; si se pasa, se conserva lo leído |
+| `SABIO_RETENCION_DIAS` | `365` | Días que se guardan las conversaciones (se informa en `/privacidad`) |
+| `SABIO_CONTACTO` | (vacía) | Correo para pedidos de baja o de acceso a los datos, en `/privacidad` y `/terminos` |
 | `SABIO_PUBLIC_URL` | (se detecta en Render y Railway) | Dirección pública del servidor |
 | `SABIO_ALLOW_PRIVATE` | `0` | `1` permite rastrear localhost (solo para la demo local) |
 | `SABIO_RENDER_JS` | `auto` | `auto`: usa navegador solo en páginas con poco contenido; `on`: siempre; `off`: nunca |
