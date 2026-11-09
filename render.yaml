@@ -23,6 +23,9 @@ services:
         sync: false
       - key: SABIO_ADMIN_TOKEN
         sync: false
+      # Correo para pedidos de baja o de acceso a los datos (aparece en /privacidad y /terminos)
+      - key: SABIO_CONTACTO
+        sync: false
       # Búsqueda semántica: con una clave de Voyage AI se activa sola (SABIO_EMBEDDINGS=auto).
       # El modelo local no entra en 512 MB. Ver DEPLOY.md.
       - key: VOYAGE_API_KEY

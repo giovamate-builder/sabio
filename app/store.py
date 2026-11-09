@@ -292,3 +292,18 @@ def month_report(site_id: str, mes: str | None = None) -> dict:
     return {"mes": label, "total": total,
             "resueltas": round(100 * by.get("respondida", 0) / total, 1) if total else None,
             "utiles": _useful(votes), "sin_respuesta": unanswered, "fuera_de_tema": off_topic}
+
+
+# ---------------------------------------------------------------- Retención (Bloque 8)
+
+def retention_days() -> int:
+    """Días que se guardan las conversaciones (SABIO_RETENCION_DIAS, 365 por defecto). Lo informa /privacidad."""
+    return max(1, int(os.environ.get("SABIO_RETENCION_DIAS", "365")))
+
+
+def purge_old_messages(days: int | None = None, now: float | None = None) -> int:
+    """Borra las conversaciones (y sus votos) más viejas que el plazo de retención."""
+    limit = (now if now is not None else time.time()) - (days or retention_days()) * 86400
+    with conn() as c:
+        c.execute("DELETE FROM feedback WHERE message_id IN (SELECT id FROM messages WHERE ts < ?)", (limit,))
+        return c.execute("DELETE FROM messages WHERE ts < ?", (limit,)).rowcount

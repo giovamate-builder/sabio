@@ -1024,3 +1024,73 @@ def test_widget_personalizable_y_seguro():
         assert a in w
     assert "' + TITLE + '" not in w and ".textContent = TITLE" in w  # el nombre se muestra como texto, no HTML
     assert "Hablar por WhatsApp" in w and "wa\.me" in w             # solo enlaces https://wa.me/
+
+
+# ---------------------------------------------------------------- Bloque 8: integraciones y legales
+
+@pytest.mark.parametrize("pagina", ["/privacidad", "/terminos"])
+def test_paginas_legales(pagina, monkeypatch):
+    monkeypatch.setenv("SABIO_RETENCION_DIAS", "180")
+    monkeypatch.setenv("SABIO_CONTACTO", "privacidad@sabio.example")
+    r = _client().get(pagina)
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert '<a href="mailto:privacidad@sabio.example">' in r.text and "{{" not in r.text
+    if pagina == "/privacidad":
+        assert "Ley 25.326" in r.text and "180 días" in r.text and "robots.txt" in r.text
+        texto = " ".join(r.text.split())  # el HTML parte las frases en varias líneas
+        assert "SabioBot" in texto and "Agencia de Acceso a la Información Pública" in texto
+
+
+def test_contacto_legal_sin_configurar_o_con_html(monkeypatch):
+    monkeypatch.delenv("SABIO_CONTACTO", raising=False)
+    assert "el responsable del sitio donde está instalado el asistente" in _client().get("/privacidad").text
+    monkeypatch.setenv("SABIO_CONTACTO", "<script>alert(1)</script>")
+    t = _client().get("/terminos").text
+    assert "<script>alert(1)</script>" not in t and "&lt;script&gt;" in t
+
+
+def test_retencion_borra_conversaciones_viejas():
+    store.init()
+    store.delete_site("ret")
+    store.create_site("ret", "https://ret.com")
+    ahora = 1_800_000_000
+    vieja = store.log_message("ret", "a", "vieja", "-", "respondida", [])
+    nueva = store.log_message("ret", "b", "nueva", "-", "respondida", [])
+    with store.conn() as c:
+        c.execute("UPDATE messages SET ts=? WHERE id=?", (ahora - 400 * 86400, vieja))
+        c.execute("UPDATE messages SET ts=? WHERE id=?", (ahora - 10 * 86400, nueva))
+    store.add_feedback("ret", vieja, 1, "a")
+    assert store.purge_old_messages(365, now=ahora) >= 1
+    with store.conn() as c:
+        assert [r[0] for r in c.execute("SELECT question FROM messages WHERE site_id='ret'")] == ["nueva"]
+        assert c.execute("SELECT COUNT(*) FROM feedback WHERE message_id=?", (vieja,)).fetchone()[0] == 0
+
+
+def test_widget_enlaza_la_privacidad():
+    w = (ROOT / "widget" / "widget.js").read_text(encoding="utf-8")
+    assert "Privacidad" in w and "API + '/privacidad'" in w
+    inicio = (ROOT / "admin" / "inicio.html").read_text(encoding="utf-8")
+    assert 'href="/privacidad"' in inicio and 'href="/terminos"' in inicio
+
+
+def test_token_de_tiendanube_nunca_se_devuelve(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", "clave")
+    store.init()
+    store.create_site("tn", "https://tn.com", "tiendanube", {"store_id": "1", "token": "SECRETO"})
+    r = _client().get("/api/sites/tn", headers={"X-Admin-Token": "clave"})
+    assert r.status_code == 200 and "SECRETO" not in r.text and "creds" not in r.json()
+
+
+def test_plugins_e_instructivos():
+    php = (ROOT / "plugins" / "woocommerce" / "sabio-chat" / "sabio-chat.php").read_text(encoding="utf-8")
+    assert php.startswith("<?php") and "Plugin Name:       SABIO Chat" in php
+    assert "add_options_page" in php and "register_setting" in php and "'wp_footer'" in php
+    assert "esc_url( $s['server'] . '/widget.js' )" in php and "esc_attr( $s['site_id'] )" in php
+    assert "defined( 'ABSPATH' )" in php
+    readme = (ROOT / "plugins" / "woocommerce" / "sabio-chat" / "readme.txt").read_text(encoding="utf-8")
+    assert readme.startswith("=== SABIO Chat ===") and "== Installation ==" in readme
+    tn = (ROOT / "plugins" / "tiendanube" / "README.md").read_text(encoding="utf-8")
+    assert "Códigos externos" in tn and '"platform": "tiendanube"' in tn and "store_id" in tn
+    sh = (ROOT / "plugins" / "shopify" / "README.md").read_text(encoding="utf-8")
+    assert "theme.liquid" in sh and "</body>" in sh

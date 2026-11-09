@@ -70,15 +70,17 @@
     'input:focus{border-color:' + COLOR + '}' +
     'button.send{border:0;background:' + COLOR + ';color:#fff;border-radius:20px;padding:0 14px;cursor:pointer;font-size:14px}' +
     '.foot{font-size:10px;color:#8a90a0;text-align:center;padding:0 0 6px;background:#fff}' +
+    '.foot a{color:#8a90a0}' +
     '</style>' +
     '<div class="panel" part="panel"><div class="head"><div><span class="title"></span><small>Respondo con la información de este sitio</small></div>' +
     '<button class="x" aria-label="Cerrar">×</button></div>' +
     '<div class="msgs" aria-live="polite"></div>' +
     '<form><input placeholder="Escribí tu consulta…" aria-label="Consulta" maxlength="500"/><button class="send" type="submit">Enviar</button></form>' +
-    '<div class="foot">Funciona con SABIO</div></div>' +
+    '<div class="foot">Funciona con SABIO · <a class="priv" target="_blank" rel="noopener">Privacidad</a></div></div>' +
     '<button class="btn" aria-label="Abrir asistente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>';
 
   root.querySelector('.title').textContent = TITLE;  // texto, no HTML
+  root.querySelector('.priv').href = API + '/privacidad';
   var panel = root.querySelector('.panel');
   var msgs = root.querySelector('.msgs');
   var form = root.querySelector('form');

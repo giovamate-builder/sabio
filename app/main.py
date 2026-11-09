@@ -60,6 +60,7 @@ async def _startup():
     if not ADMIN_TOKEN and not dev_mode():
         print("SABIO AVISO: SABIO_ADMIN_TOKEN no está definido. El panel y la carga de sitios quedan "
               "deshabilitados; el widget sigue funcionando. Definí la clave (o SABIO_ENV=dev en local).")
+    store.purge_old_messages()  # retención declarada en /privacidad
     n = store.mark_interrupted()
     if n:
         print(f"SABIO: {n} sitio(s) quedaron con el rastreo cortado por un reinicio; se marcaron como error.")
@@ -83,6 +84,7 @@ def _setup_demo():
 async def _recrawl_loop():
     while True:
         await asyncio.sleep(3600)
+        store.purge_old_messages()
         for s in store.list_sites():
             if s["status"] == "listo" and time.time() - (s["crawled_at"] or 0) > RECRAWL_HOURS * 3600:
                 if not ingest.reserve(s["id"]):
@@ -288,6 +290,31 @@ def eval_summary():
 @app.get("/presentacion")
 def presentacion():
     return FileResponse(ROOT / "admin" / "presentacion.html")
+
+
+def _legal_page(name: str) -> HTMLResponse:
+    """Términos y privacidad, con el contacto (SABIO_CONTACTO) y la retención reales del servidor."""
+    import html
+    contact = os.environ.get("SABIO_CONTACTO", "").strip()
+    if not contact:
+        contact_html = "el responsable del sitio donde está instalado el asistente"
+    elif "@" in contact and " " not in contact:
+        contact_html = f'<a href="mailto:{html.escape(contact)}">{html.escape(contact)}</a>'
+    else:
+        contact_html = html.escape(contact)
+    page = (ROOT / "admin" / f"{name}.html").read_text(encoding="utf-8")
+    return HTMLResponse(page.replace("{{CONTACTO}}", contact_html)
+                        .replace("{{RETENCION}}", str(store.retention_days())))
+
+
+@app.get("/privacidad")
+def privacidad():
+    return _legal_page("privacidad")
+
+
+@app.get("/terminos")
+def terminos():
+    return _legal_page("terminos")
 
 
 @app.get("/api/health")
