@@ -1,6 +1,7 @@
 """Pruebas automáticas de SABIO. Correr con:  pytest -q"""
 import asyncio
 import json
+import re
 import os
 import sys
 from pathlib import Path
@@ -666,3 +667,85 @@ def test_el_widget_sigue_funcionando_sin_clave(api_sin_rastreo, monkeypatch):
     assert api_sin_rastreo.get("/api/health").status_code == 200
     widget = (ROOT / "widget" / "widget.js").read_text(encoding="utf-8")
     assert set(__import__("re").findall(r"/api/[a-z/]+", widget)) == {"/api/chat"}  # el widget solo usa el chat
+
+
+# ---------------------------------------------------------------- Bloque 3: calidad de respuestas
+
+def _demo_tecnosur(sid="b3-tecnosur", key="tecnosur", name="TecnoSur"):
+    """Un sitio de ejemplo indexado desde sus archivos, con URL pública absoluta (como en Render)."""
+    from app.ingest import ingest_local
+    store.init()
+    store.create_site(sid, f"https://sabio.example.com/demo/{key}")
+    ingest_local(sid, ROOT / "demo_sites" / key, f"/demo/{key}/", name)
+    return sid
+
+
+@pytest.mark.parametrize("q", ["¿qué venden?", "¿Qué productos tienen?", "¿qué es esta tienda?",
+                               "hola, ¿qué venden??", "¿a qué se dedican?"])
+def test_preguntas_generales_responden_con_el_perfil(q):
+    sid = _demo_tecnosur()
+    a = run(engine.answer(sid, q))
+    assert a.status == "respondida"
+    assert "Tienda online de tecnología" in a.text and "Computación" in a.text  # descripción y categorías
+    productos = a.text.split("Algunos productos: ")[1].rstrip(".").split(", ")
+    assert 4 <= len(productos) <= 5
+    nombres = {c["title"] for c in store.get_chunks(sid) if c["kind"] == "product"}
+    assert set(productos) <= nombres  # todo sale de lo rastreado
+    assert a.sources == [{"titulo": "Página de inicio de TecnoSur", "url": "https://sabio.example.com/demo/tecnosur"}]
+
+
+def test_pregunta_general_no_atrapa_otras_preguntas():
+    sid = _demo_tecnosur()
+    assert run(engine.answer(sid, "¿qué venden en la farmacia de enfrente?")).status == "fuera_de_alcance"
+    a = run(engine.answer(sid, "¿qué precio tiene la notebook?"))
+    assert "899.999" in a.text and "Algunos productos" not in a.text
+
+
+def test_envio_a_destino_que_el_sitio_no_nombra():
+    sid = _demo_tecnosur()
+    a = run(engine.answer(sid, "¿me lo mandan a Córdoba?"))
+    assert a.status == "respondida" and a.text.startswith("El sitio de TecnoSur no menciona «Córdoba»")
+    assert "Hacemos envíos a todo el país" in a.text and "ventas@tecnosur.com.ar" in a.text  # contenido y contacto
+    assert a.sources[0]["url"] == "https://sabio.example.com/demo/tecnosur/envios.html"
+    envios = next(c["text"] for c in store.get_chunks(sid) if c["url"].endswith("envios.html"))
+    assert all(m in envios for m in re.findall(r"\$[\d.]+", a.text))  # ningún costo que no esté escrito
+    assert "llega" not in a.text.lower().replace("llegar", "")
+
+
+def test_envio_con_dos_terminos_desconocidos_no_responde():
+    sid = _demo_tecnosur()
+    assert run(engine.answer(sid, "¿me mandan una heladera a Córdoba?")).status in ("sin_info", "fuera_de_alcance")
+
+
+def _paginas(n, comun="Tienda online de tecnología en Pilar, Buenos Aires"):
+    return [parse_page(f"https://r.com/p{i}", f"<html><head><title>P{i}</title></head><body><main><p>{comun}</p>"
+                                            f"<p>Contenido propio de la página {i}.</p></main></body></html>")
+            for i in range(n)]
+
+
+def test_lineas_repetidas_se_quitan_salvo_del_inicio():
+    from app.search import repeated_lines
+    pages = _paginas(6)
+    assert repeated_lines([p.text.split("\n") for p in pages]) == {"Tienda online de tecnología en Pilar, Buenos Aires"}
+    chunks = [c for c in chunk_pages(pages, []) if c["kind"] == "page"]
+    assert "Tienda online" in chunks[0]["text"]                       # la portada la conserva
+    assert all("Tienda online" not in c["text"] for c in chunks[1:])  # el resto no la repite
+    assert all("Contenido propio" in c["text"] for c in chunks)
+
+
+def test_lineas_repetidas_no_se_quitan_en_sitios_chicos():
+    chunks = [c for c in chunk_pages(_paginas(4), []) if c["kind"] == "page"]
+    assert all("Tienda online" in c["text"] for c in chunks)
+
+
+def test_respuestas_sin_eslogan_repetido():
+    sid = _demo_tecnosur()
+    a = run(engine.answer(sid, "¿qué medios de pago aceptan?"))
+    assert a.status == "respondida" and not a.text.startswith("Tienda online") and "Visa" in a.text
+
+
+@pytest.mark.parametrize("q", ["¿cuánto sale la notebook?", "¿qué medios de pago aceptan?"])
+def test_fuentes_siempre_con_url_absoluta(q):
+    sid = _demo_tecnosur()
+    a = run(engine.answer(sid, q))
+    assert a.sources and all(s["url"].startswith("https://sabio.example.com/demo/tecnosur/") for s in a.sources)

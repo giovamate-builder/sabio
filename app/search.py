@@ -244,6 +244,18 @@ def build_profile(pages, products, name_hint: str = "") -> dict:
     }
 
 
+BOILERPLATE_SHARE = 0.6   # una línea en más del 60% de las páginas es texto repetido del sitio
+BOILERPLATE_MIN_PAGES = 5
+
+
+def repeated_lines(page_lines: list[list[str]]) -> set[str]:
+    """Líneas presentes en más del 60% de las páginas (solo en sitios de 5 páginas o más)."""
+    if len(page_lines) < BOILERPLATE_MIN_PAGES:
+        return set()
+    freq = Counter(ln for lines in page_lines for ln in set(lines))
+    return {ln for ln, n in freq.items() if n > BOILERPLATE_SHARE * len(page_lines)}
+
+
 def chunk_pages(pages, products) -> list[dict]:
     out = []
     product_urls = set()
@@ -251,12 +263,22 @@ def chunk_pages(pages, products) -> list[dict]:
         product_urls.add(pr.url)
         out.append({"url": pr.url, "title": pr.name, "kind": "product", "text": pr.as_text(),
                     "product": pr.__dict__})
+    page_lines = []
     for p in pages:
-        lines = p.text.split("\n")
+        lines = [ln for ln in p.text.split("\n") if ln.strip()]
         # La meta descripción suele resumir lo importante ("Envíos a todo el país") y en los sitios
         # hechos con JavaScript a veces es lo único legible
         if p.meta_description and p.meta_description not in p.text:
             lines.insert(0, p.meta_description)
+        page_lines.append(lines)
+    boiler = repeated_lines(page_lines)
+    for i, (p, lines) in enumerate(zip(pages, page_lines)):
+        # Las líneas que se repiten en casi todas las páginas (eslogan, menú, pie) se quitan, salvo de la
+        # primera página (el inicio), para no perder la información si es la única copia útil
+        if i > 0 and boiler:
+            lines = [ln for ln in lines if ln not in boiler]
+            if not lines:
+                continue
         buf, size = [], 0
         for ln in lines:
             if size + len(ln) > 900 and buf:

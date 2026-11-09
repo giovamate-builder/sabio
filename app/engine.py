@@ -18,6 +18,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from urllib.parse import urljoin
 
 import numpy as np
 
@@ -41,6 +42,13 @@ DESC = re.compile(r"(descrip|caracter[ií]stic|detalle|especificac|medida|materi
 # "¿Cómo se hace…?" pide la receta o el procedimiento, no la ficha del producto
 HOWTO = re.compile(r"(c[oó]mo se (hace|prepara|cocina|arma)|receta|ingredientes|paso a paso)", re.I)
 HOWTO_TITLE = re.compile(r"(receta|c[oó]mo|paso|prepar|instructivo|gu[ií]a)", re.I)
+# Preguntas generales sobre el negocio. Anclada a la pregunta entera: "¿qué venden en la farmacia de
+# enfrente?" no entra. Se aplica sobre el texto normalizado (sin tildes ni signos repetidos)
+GENERAL_Q = re.compile(r"^[¿¡\s]*(hola[,!.\s¿¡]+)?(y\s+)?(que|q)\s+(es\s+(esta|este|esto)(\s+(tienda|sitio|pagina|negocio|"
+                       r"empresa|lugar|local|web))?|venden|vendes|ofrecen|ofreces|hacen|tienen(\s+para\s+vender)?|"
+                       r"(tipo\s+de\s+)?productos?\s+(tienen|venden|hay|ofrecen|manejan)|(cosas|articulos)\s+venden)"
+                       r"|^[¿¡\s]*(a\s+que\s+se\s+dedican|de\s+que\s+se\s+trata(\s+(esta|este)\s+\w+)?)")
+GENERAL_END = re.compile(r"[?!.\s]*$")
 SERVICE_TERMS = {"envio", "entrega", "pago", "cuota", "horario", "garantia", "cambio", "devolucion", "retirar", "local"}
 # Preguntas de compra: en una tienda nunca son "fuera de alcance" (se aplica sobre texto sin tildes)
 COMMERCE = re.compile(r"\b(stock|disponib\w*|precio\w*|cuesta\w*|cuanto (sale|vale)\w*|envio\w*|envia\w*|"
@@ -268,10 +276,73 @@ def use_llm() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY")) and os.environ.get("SABIO_MODE", "auto") != "extractivo"
 
 
+def _is_general(q: str) -> bool:
+    n = normalize(q).strip()
+    m = GENERAL_Q.match(n)
+    return bool(m) and not GENERAL_END.sub("", n[m.end():])
+
+
+def _general_answer(site, idx: Index) -> Answer | None:
+    """"¿Qué venden?": descripción, categorías y algunos productos, todo tomado de lo rastreado."""
+    prof = site.get("profile") or {}
+    name = _site_name(site)
+    prods = [c["product"] for c in idx.chunks if c["kind"] == "product" and c.get("product")]
+    # Primero los que tienen stock, sin repetir nombres
+    prods.sort(key=lambda p: 0 if (p.get("availability") or "").startswith("en stock") else 1)
+    names = list(dict.fromkeys(p["name"] for p in prods))[:5]
+    desc = (prof.get("descripcion") or "").strip()
+    if not desc and not names:
+        return None
+    parts = [f"{name}: {desc.rstrip('.')}." if desc else f"Esto es lo que ofrece {name}."]
+    cats = [c for c in (prof.get("categorias") or []) if c][:6]
+    if cats:
+        parts.append("Categorías: " + ", ".join(cats) + ".")
+    if names:
+        parts.append("Algunos productos: " + ", ".join(names) + ".")
+    return Answer("\n".join(parts), "respondida", [{"titulo": f"Página de inicio de {name}", "url": site["url"]}])
+
+
+def _shipping_answer(site, idx: Index, q: str, blocking: list[str], groups) -> Answer | None:
+    """Envío a un destino que el sitio no nombra ("¿me lo mandan a Córdoba?"): se muestra lo que el sitio
+    dice sobre envíos, aclarando que ese destino no figura. Nunca se afirma que llega ni se da un costo
+    que no esté escrito: solo se copia el texto del sitio."""
+    terms = {t for b, alts in groups for t in [b] + alts}
+    # Un solo término desconocido (el destino). Con dos ("¿me mandan una heladera a Córdoba?") mostrar la
+    # política de envíos daría a entender que el producto existe: mejor "no tengo esa información"
+    if "envio" not in terms or len(blocking) != 1:
+        return None
+    pages = [(sc, i) for sc, i, cov in idx._bm25("envios entregas") if idx.chunks[i]["kind"] == "page"]
+    if not pages:
+        return None
+    ch = idx.chunks[pages[0][1]]
+    lines = [ln for ln in ch["text"].split("\n") if ln.strip()]
+    if lines and lines[0].strip() == ch["title"].split(" | ")[0].strip():
+        lines = lines[1:]
+    if not lines:
+        return None
+    place = _surface(q, blocking) or "ese destino"
+    name = _site_name(site)
+    text = (f"El sitio de {name} no menciona «{place}». Esto es lo que publica sobre envíos:\n"
+            + "\n".join(lines[:8]) + "\n" + _contact_line(site).replace("Podés", "Para confirmarlo, podés"))
+    return Answer(text, "respondida", [{"titulo": ch["title"], "url": ch["url"]}])
+
+
+def _absolute(site, ans: Answer) -> Answer:
+    """Todas las fuentes como URL absoluta (los sitios de ejemplo guardan rutas relativas)."""
+    base = (site.get("url") or "").rstrip("/") + "/"
+    ans.sources = [dict(s, url=urljoin(base, s["url"])) for s in ans.sources]
+    return ans
+
+
 async def answer(site_id: str, question: str, history: list[dict] | None = None) -> Answer:
     site = store.get_site(site_id)
     if not site:
         raise KeyError(site_id)
+    return _absolute(site, await _answer(site, question, history))
+
+
+async def _answer(site, question: str, history: list[dict] | None) -> Answer:
+    site_id = site["id"]
     name = _site_name(site)
     q = (question or "").strip()[:500]
     if not q:
@@ -283,6 +354,10 @@ async def answer(site_id: str, question: str, history: list[dict] | None = None)
         return Answer("¡De nada! Si necesitás algo más, acá estoy.", "charla")
 
     idx = get_index(site_id)
+    if _is_general(q):
+        general = _general_answer(site, idx)
+        if general:
+            return general
     qvec = semantic.embed_query(q) if idx.vectors is not None else None
     alternatives = tuple(await _rewrites(site, q)) if use_llm() else ()
     hits, qtok = idx.search(q, k=20, qvec=qvec, alternatives=alternatives)
@@ -318,6 +393,9 @@ async def answer(site_id: str, question: str, history: list[dict] | None = None)
     # demás ("auriculares", "receta") sería inventar, así que sin ellos no hay respuesta extractiva.
     blocking = [b for b, alts in groups if len(b) >= 4 and not b.isdigit() and b not in NONBLOCKING
                 and not resolved(b, alts, idx.strong)]
+    shipping = _shipping_answer(site, idx, q, blocking, groups) if blocking else None
+    if shipping:
+        return shipping
     good = [h for h in hits if h[2] >= 0.3]
     if use_llm() and good:
         live = await _live_products(site)

@@ -3,7 +3,8 @@
 Indicadores (ver punto 10 y 19 del documento):
 - Precisión: preguntas del sitio respondidas con la fuente correcta y el dato esperado.
   Se informa para el set original ("dentro") y para el coloquial (sinónimos, lunfardo, errores
-  de tipeo, signos repetidos: "dentro_coloquial").
+  de tipeo, signos repetidos: "dentro_coloquial") y para preguntas sobre el negocio y envíos a
+  destinos que el sitio no nombra ("dentro_negocio").
 - Respuestas inventadas: respuestas a preguntas fuera de tema (deberían ser 0). Incluye las
   fuera de tema parecidas al rubro ("fuera_parecidas"), que son las más fáciles de contestar mal.
 - Rechazo correcto: preguntas fuera de tema que el asistente rechaza (fuera_de_alcance o sin_info).
@@ -63,11 +64,11 @@ def main():
     for s in r.json():
         sites.setdefault(s["url"], s["id"])
     lat, fails = [], []
-    c = {k: [0, 0] for k in ("dentro", "dentro_coloquial", "fuera", "fuera_parecidas", "vagas")}
+    c = {k: [0, 0] for k in ("dentro", "dentro_coloquial", "dentro_negocio", "fuera", "fuera_parecidas", "vagas")}
     inventadas = 0
     for name, data in SET.items():
         sid = sites[f"http://localhost:{PORTS[name]}"]
-        for cat in ("dentro", "dentro_coloquial"):
+        for cat in ("dentro", "dentro_coloquial", "dentro_negocio"):
             for q, url_part, expected in data.get(cat, []):
                 r = ask(sid, q, lat)
                 src_ok = any(url_part in f["url"] for f in r["fuentes"])
@@ -101,6 +102,8 @@ def main():
         "precision": rate("dentro"),
         "preguntas_coloquiales": c["dentro_coloquial"][1],
         "precision_coloquial": rate("dentro_coloquial"),
+        "preguntas_negocio": c["dentro_negocio"][1],
+        "precision_negocio": rate("dentro_negocio"),
         "preguntas_fuera_de_tema": fuera_total,
         "rechazo_correcto": round((c["fuera"][0] + c["fuera_parecidas"][0]) / fuera_total, 3),
         "rechazo_correcto_parecidas": rate("fuera_parecidas"),

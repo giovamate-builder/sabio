@@ -245,12 +245,36 @@
    "venden televisores?",
    "tienen PlayStation 5?",
    "tienen auriculares Sony?",
-   "arreglan notebooks?"
+   "arreglan notebooks?",
+   "¿qué venden en la farmacia de enfrente?",
+   "¿me mandan una heladera a Córdoba?"
   ],
   "vagas": [
    "tenés algo para regalar?",
    "qué me recomendás para la oficina?",
    "tienen ofertas?"
+  ],
+  "dentro_negocio": [
+   [
+    "¿qué venden?",
+    "",
+    "Computación"
+   ],
+   [
+    "¿qué productos tienen?",
+    "",
+    "Auriculares"
+   ],
+   [
+    "¿qué es esta tienda?",
+    "",
+    "tecnología"
+   ],
+   [
+    "¿me lo mandan a Córdoba?",
+    "envios",
+    "no menciona «Córdoba»"
+   ]
   ]
  },
  "dulcepilar": {
@@ -402,6 +426,23 @@
   "vagas": [
    "tenés algo dulce para el cumple?",
    "qué me recomendás para la merienda?"
+  ],
+  "dentro_negocio": [
+   [
+    "¿qué venden?",
+    "",
+    "Tortas"
+   ],
+   [
+    "¿a qué se dedican?",
+    "",
+    "Pastelería"
+   ],
+   [
+    "¿hacen envíos a Escobar?",
+    "pedidos",
+    "no menciona «Escobar»"
+   ]
   ]
  }
 }
